@@ -792,7 +792,7 @@ func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberMergeWithResponse(
+	resp, err := client.HTTP.MergePullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 		generated.MergePRInputBody{
 			CommitTitle:   "title",
@@ -821,7 +821,7 @@ func TestAPIMergePR409ReturnsGitHubMessage(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberMergeWithResponse(
+	resp, err := client.HTTP.MergePullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 		generated.MergePRInputBody{
 			CommitTitle:   "title",
@@ -847,7 +847,7 @@ func TestAPIMergePRNetworkErrorReturns502(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberMergeWithResponse(
+	resp, err := client.HTTP.MergePullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 		generated.MergePRInputBody{
 			CommitTitle:   "title",
@@ -876,7 +876,7 @@ func TestAPIMergePR422ForwardsGitHubMessage(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberMergeWithResponse(
+	resp, err := client.HTTP.MergePullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 		generated.MergePRInputBody{
 			CommitTitle:   "title",
@@ -905,7 +905,7 @@ func TestAPIMergePR403ForwardsGitHubMessage(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberMergeWithResponse(
+	resp, err := client.HTTP.MergePullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 		generated.MergePRInputBody{
 			CommitTitle:   "title",
@@ -934,7 +934,7 @@ func TestAPIMergePR5xxReturns502WithGitHubMessage(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberMergeWithResponse(
+	resp, err := client.HTTP.MergePullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 		generated.MergePRInputBody{
 			CommitTitle:   "title",
@@ -977,7 +977,7 @@ func TestAPIMergePRForwardsGitHubErrorDetailsAndLogsError(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberMergeWithResponse(
+	resp, err := client.HTTP.MergePullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 		generated.MergePRInputBody{
 			CommitTitle:   "title",
@@ -1009,7 +1009,7 @@ func TestAPIMergePRStoresUTCTimestamps(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberMergeWithResponse(
+	resp, err := client.HTTP.MergePullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 		generated.MergePRInputBody{
 			CommitTitle:   "title",
@@ -1080,7 +1080,7 @@ func TestAPIGetPullIsDBOnly(t *testing.T) {
 	seedPRWithHeadSHA(t, database, "acme", "widget", 1, "deadbeef")
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -1139,7 +1139,7 @@ func TestAPISyncPRIncludesWorkflowApproval(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
+	resp, err := client.HTTP.SyncPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -1189,7 +1189,7 @@ func TestAPISyncPRPersistsMergeableState(t *testing.T) {
 	})
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
+	resp, err := client.HTTP.SyncPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -1248,7 +1248,7 @@ func TestAPISyncPRPreservesMergeableStateWhenRefreshHasNoAnswer(t *testing.T) {
 			}, withSeedPRHeadSHA("abc123"), withSeedPRBaseSHA("def456"))
 			client := setupTestClient(t, srv)
 
-			resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
+			resp, err := client.HTTP.SyncPullWithResponse(
 				t.Context(), "gh", "acme", "widget", 1,
 			)
 			require.NoError(err)
@@ -1317,7 +1317,7 @@ func TestAPIEnqueuePRSyncPersistsWorkflowApproval(t *testing.T) {
 	require.Equal(http.StatusAccepted, resp.StatusCode())
 
 	require.Eventually(func() bool {
-		detail, dErr := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+		detail, dErr := client.HTTP.GetPullWithResponse(
 			t.Context(), "gh", "acme", "widget", 1,
 		)
 		if dErr != nil || detail.JSON200 == nil {
@@ -1328,7 +1328,7 @@ func TestAPIEnqueuePRSyncPersistsWorkflowApproval(t *testing.T) {
 	}, 3*time.Second, 25*time.Millisecond,
 		"GET should return persisted workflow_approval after async sync")
 
-	detail, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	detail, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -1390,7 +1390,7 @@ func TestAPIGetPullClearsWorkflowApprovalWhenHeadMoves(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	// First sync: persists required=true for abc123.
-	syncResp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
+	syncResp, err := client.HTTP.SyncPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -1399,13 +1399,13 @@ func TestAPIGetPullClearsWorkflowApprovalWhenHeadMoves(t *testing.T) {
 
 	// Head moves forward (force-push); new SHA has no action_required runs.
 	headSHA.Store("def456")
-	syncResp2, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
+	syncResp2, err := client.HTTP.SyncPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, syncResp2.StatusCode())
 
-	detail, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	detail, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -1482,7 +1482,7 @@ func TestAPIApproveWorkflows(t *testing.T) {
 	))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse(
+	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -1537,7 +1537,7 @@ func TestAPIApproveWorkflowsZeroMatchesStillSyncsPR(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse(
+	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -1606,7 +1606,7 @@ func TestAPIApproveWorkflowsReturnsUnderlyingApprovalErrorAfterPartialFailure(t 
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse(
+	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -1674,7 +1674,7 @@ func TestAPISyncPRIncludesWorkflowApprovalForForkPR(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
+	resp, err := client.HTTP.SyncPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -1741,7 +1741,7 @@ func TestAPIApproveWorkflowsForForkPR(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse(
+	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -1798,7 +1798,7 @@ func TestAPISyncPRIgnoresWorkflowRunsForOtherPRAtSameSHA(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
+	resp, err := client.HTTP.SyncPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -1865,7 +1865,7 @@ func TestAPIApproveWorkflowsIgnoresRunsForOtherPRAtSameSHA(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse(
+	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -1932,7 +1932,7 @@ func TestAPIApproveWorkflowsRejectsRunFromDifferentForkAtSameSHA(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse(
+	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -1945,7 +1945,7 @@ func TestAPIGetPullNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 999,
 	)
 	require.NoError(t, err)
@@ -1980,7 +1980,7 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissing(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -2034,7 +2034,7 @@ func TestAPIGetPullNoDiffWarningWhenSHAsPresent(t *testing.T) {
 	))
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 2,
 	)
 	require.NoError(err)
@@ -2085,7 +2085,7 @@ func TestAPIGetPullEmitsStaleDiffWarning(t *testing.T) {
 	))
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 3,
 	)
 	require.NoError(err)
@@ -2138,7 +2138,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnBaseDrift(t *testing.T) {
 	))
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 4,
 	)
 	require.NoError(err)
@@ -2192,7 +2192,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnMergedPR(t *testing.T) {
 	))
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 5,
 	)
 	require.NoError(err)
@@ -2239,7 +2239,7 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissingClosed(t *testing.T) {
 	// diff sync errored out.
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 6,
 	)
 	require.NoError(err)
@@ -2290,7 +2290,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnClosedPR(t *testing.T) {
 	))
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 7,
 	)
 	require.NoError(err)
@@ -2342,7 +2342,7 @@ func TestAPIGetPullNoDiffWarningOnMergedPRWithBaseDrift(t *testing.T) {
 	))
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 8,
 	)
 	require.NoError(err)
@@ -2422,7 +2422,7 @@ func TestAPISyncPRSanitizesDiffFailureWarning(t *testing.T) {
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
+	resp, err := client.HTTP.SyncPullWithResponse(
 		t.Context(), "gh", "acme", "widget", int64(prNumber),
 	)
 	require.NoError(err)
@@ -2809,7 +2809,7 @@ func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
 	providerName := "gitlab"
 	providerHost := "gitlab.example.com:8443"
 	mrNumber := int64(7)
-	pullResp, err := client.HTTP.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse(
+	pullResp, err := client.HTTP.GetPullOnHostWithResponse(
 		ctx, providerHost, providerName, "Group/SubGroup", "Project.Special", mrNumber,
 	)
 	require.NoError(err)
@@ -2822,7 +2822,7 @@ func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
 	assert.Len(*pullResp.JSON200.Events, 1)
 
 	issueNumber := int64(11)
-	issueResp, err := client.HTTP.GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberWithResponse(
+	issueResp, err := client.HTTP.GetIssueOnHostWithResponse(
 		ctx, providerHost, providerName, "Group/SubGroup", "Project.Special", issueNumber,
 	)
 	require.NoError(err)
@@ -2911,7 +2911,7 @@ func TestAPICIRefreshWarnsAndPreservesCIWhenProviderFails(t *testing.T) {
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse(
+	resp, err := client.HTTP.RefreshPullCiOnHostWithResponse(
 		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
 	)
 	require.NoError(err)
@@ -3108,7 +3108,7 @@ func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
 	issueDirect := int64(11)
 	issueAsync := int64(12)
 
-	prResp, err := client.HTTP.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
+	prResp, err := client.HTTP.SyncPullOnHostWithResponse(
 		ctx, providerHost, providerName, "Group/SubGroup", "Project.Special", mrDirect,
 	)
 	require.NoError(err)
@@ -3119,7 +3119,7 @@ func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
 	assert.Equal("Sync direct provider MR", prResp.JSON200.MergeRequest.Title)
 	assert.Len(*prResp.JSON200.Events, 1)
 
-	issueResp, err := client.HTTP.PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncWithResponse(
+	issueResp, err := client.HTTP.SyncIssueOnHostWithResponse(
 		ctx, providerHost, providerName, "Group/SubGroup", "Project.Special", issueDirect,
 	)
 	require.NoError(err)
@@ -3929,12 +3929,12 @@ func TestAPIApprovePRRejectsNilProviderPayload(t *testing.T) {
 	mrID := seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberApproveWithResponse(
+	resp, err := client.HTTP.ApprovePullWithResponse(
 		t.Context(), "gh",
 		"acme",
 		"widget",
 		1,
-		generated.PostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody{},
+		generated.ApprovePullJSONRequestBody{},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
@@ -3965,12 +3965,12 @@ func TestAPIMergePRRejectsNilProviderPayload(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberMergeWithResponse(
+	resp, err := client.HTTP.MergePullWithResponse(
 		t.Context(), "gh",
 		"acme",
 		"widget",
 		1,
-		generated.PostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody{
+		generated.MergePullJSONRequestBody{
 			Method: "squash",
 		},
 	)
@@ -4587,7 +4587,7 @@ func TestAPIReadyForReview(t *testing.T) {
 	require.NoError(err)
 	require.NoError(database.EnsureKanbanState(t.Context(), prID))
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse(
+	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -4906,10 +4906,10 @@ func TestAPISyncPRDoesNotOverwriteNewerStateChange(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	syncDone := make(chan *generated.PostPullsByProviderByOwnerByNameByNumberSyncResponse, 1)
+	syncDone := make(chan *generated.SyncPullResponse, 1)
 	syncErr := make(chan error, 1)
 	go func() {
-		resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
+		resp, err := client.HTTP.SyncPullWithResponse(
 			t.Context(), "gh", "acme", "widget", 1,
 		)
 		if err != nil {
@@ -5017,10 +5017,10 @@ func TestAPISyncPRPreservesCIStatusWhileRefreshingCI(t *testing.T) {
 	))
 	client := setupTestClient(t, srv)
 
-	syncDone := make(chan *generated.PostPullsByProviderByOwnerByNameByNumberSyncResponse, 1)
+	syncDone := make(chan *generated.SyncPullResponse, 1)
 	syncErr := make(chan error, 1)
 	go func() {
-		resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
+		resp, err := client.HTTP.SyncPullWithResponse(
 			t.Context(), "gh", "acme", "widget", 1,
 		)
 		if err != nil {
@@ -5036,7 +5036,7 @@ func TestAPISyncPRPreservesCIStatusWhileRefreshingCI(t *testing.T) {
 		require.Fail("CI refresh did not start")
 	}
 
-	detailResp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	detailResp, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -5114,13 +5114,13 @@ func TestAPISyncPRClearsCIWhenHeadSHAChanges(t *testing.T) {
 	))
 	client := setupTestClient(t, srv)
 
-	syncResp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
+	syncResp, err := client.HTTP.SyncPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, syncResp.StatusCode())
 
-	detailResp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	detailResp, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -5350,10 +5350,10 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 	require.NoError(err)
 	require.NoError(database.EnsureKanbanState(t.Context(), prID))
 
-	syncDone := make(chan *generated.PostPullsByProviderByOwnerByNameByNumberSyncResponse, 1)
+	syncDone := make(chan *generated.SyncPullResponse, 1)
 	syncErr := make(chan error, 1)
 	go func() {
-		resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
+		resp, err := client.HTTP.SyncPullWithResponse(
 			t.Context(), "gh", "acme", "widget", 1,
 		)
 		if err != nil {
@@ -5365,7 +5365,7 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 
 	<-syncStarted
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse(
+	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -5433,10 +5433,10 @@ func TestAPISyncIssueDoesNotOverwriteNewerStateChange(t *testing.T) {
 	seedIssue(t, database, "acme", "widget", 5, "open")
 	client := setupTestClient(t, srv)
 
-	syncDone := make(chan *generated.PostIssuesByProviderByOwnerByNameByNumberSyncResponse, 1)
+	syncDone := make(chan *generated.SyncIssueResponse, 1)
 	syncErr := make(chan error, 1)
 	go func() {
-		resp, err := client.HTTP.PostIssuesByProviderByOwnerByNameByNumberSyncWithResponse(
+		resp, err := client.HTTP.SyncIssueWithResponse(
 			t.Context(), "gh", "acme", "widget", 5,
 		)
 		if err != nil {
@@ -5521,7 +5521,7 @@ func TestAPISyncIssueNilUpdatedAtFallsBackToCreatedAt(t *testing.T) {
 
 	// Before the nil guard, refreshIssueTimeline panicked on
 	// ghIssue.UpdatedAt.Time and the handler returned 502.
-	syncResp, err := client.HTTP.PostIssuesByProviderByOwnerByNameByNumberSyncWithResponse(
+	syncResp, err := client.HTTP.SyncIssueWithResponse(
 		ctx, "gh", "acme", "widget", 9,
 	)
 	require.NoError(err)
@@ -5535,7 +5535,7 @@ func TestAPISyncIssueNilUpdatedAtFallsBackToCreatedAt(t *testing.T) {
 
 	// Verify the persisted value round-trips through the read
 	// endpoint so the storage -> serializer path is covered.
-	getResp, err := client.HTTP.GetIssuesByProviderByOwnerByNameByNumberWithResponse(
+	getResp, err := client.HTTP.GetIssueWithResponse(
 		ctx, "gh", "acme", "widget", 9,
 	)
 	require.NoError(err)
@@ -5774,7 +5774,7 @@ func TestAPIGetIssueAcceptsMixedCaseRepoPath(t *testing.T) {
 	seedIssue(t, database, "acme", "widget", 5, "open")
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.GetIssuesByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetIssueWithResponse(
 		t.Context(), "gh", "Acme", "Widget", 5,
 	)
 	require.NoError(err)
@@ -6199,7 +6199,7 @@ func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
 	assert.Equal("bug", (*apiIssue.Labels)[0].Name)
 
 	// Verify via GetIssue API
-	detailResp, err := client.HTTP.GetIssuesByProviderByOwnerByNameByNumberWithResponse(
+	detailResp, err := client.HTTP.GetIssueWithResponse(
 		ctx, "gh", "acme", "widget", 60,
 	)
 	require.NoError(err)
@@ -6305,7 +6305,7 @@ func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
 	require.Len(*apiIssue.Labels, 1)
 	assert.Equal("bug", (*apiIssue.Labels)[0].Name)
 
-	detailResp, err := client.HTTP.GetIssuesByProviderByOwnerByNameByNumberWithResponse(
+	detailResp, err := client.HTTP.GetIssueWithResponse(
 		ctx, "gh", "acme", "widget", 80,
 	)
 	require.NoError(err)
@@ -6426,7 +6426,7 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 	// API must expose GraphQL TotalCount (42), not stale DB (5).
 	// With the preservation bug, count would remain 5.
 	client := setupTestClient(t, srv)
-	detailResp, err := client.HTTP.GetIssuesByProviderByOwnerByNameByNumberWithResponse(
+	detailResp, err := client.HTTP.GetIssueWithResponse(
 		ctx, "gh", "acme", "widget", 90,
 	)
 	require.NoError(err)
@@ -6533,7 +6533,7 @@ func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	firstResp, err := client.HTTP.GetPullWithResponse(
 		ctx, "gh", "acme", "widget", int64(prNumber),
 	)
 	require.NoError(err)
@@ -6554,7 +6554,7 @@ func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	secondResp, err := client.HTTP.GetPullWithResponse(
 		ctx, "gh", "acme", "widget", int64(prNumber),
 	)
 	require.NoError(err)
@@ -6663,7 +6663,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	firstResp, err := client.HTTP.GetPullWithResponse(
 		ctx, "gh", "acme", "widget", int64(prNumber),
 	)
 	require.NoError(err)
@@ -6679,7 +6679,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	secondResp, err := client.HTTP.GetPullWithResponse(
 		ctx, "gh", "acme", "widget", int64(prNumber),
 	)
 	require.NoError(err)
@@ -6814,7 +6814,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	firstResp, err := client.HTTP.GetPullWithResponse(
 		ctx, "gh", "acme", "widget", int64(targetNumber),
 	)
 	require.NoError(err)
@@ -6829,7 +6829,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	secondResp, err := client.HTTP.GetPullWithResponse(
 		ctx, "gh", "acme", "widget", int64(targetNumber),
 	)
 	require.NoError(err)
@@ -6923,7 +6923,7 @@ func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetIssuesByProviderByOwnerByNameByNumberWithResponse(
+	firstResp, err := client.HTTP.GetIssueWithResponse(
 		ctx, "gh", "acme", "widget", int64(issueNumber),
 	)
 	require.NoError(err)
@@ -6944,7 +6944,7 @@ func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetIssuesByProviderByOwnerByNameByNumberWithResponse(
+	secondResp, err := client.HTTP.GetIssueWithResponse(
 		ctx, "gh", "acme", "widget", int64(issueNumber),
 	)
 	require.NoError(err)
@@ -7038,7 +7038,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 
 	srv.syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetIssuesByProviderByOwnerByNameByNumberWithResponse(
+	firstResp, err := client.HTTP.GetIssueWithResponse(
 		ctx, "gh", "acme", "widget", int64(issueNumber),
 	)
 	require.NoError(err)
@@ -7054,7 +7054,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 
 	srv.syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetIssuesByProviderByOwnerByNameByNumberWithResponse(
+	secondResp, err := client.HTTP.GetIssueWithResponse(
 		ctx, "gh", "acme", "widget", int64(issueNumber),
 	)
 	require.NoError(err)
@@ -7180,7 +7180,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T
 
 	srv.syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetIssuesByProviderByOwnerByNameByNumberWithResponse(
+	firstResp, err := client.HTTP.GetIssueWithResponse(
 		ctx, "gh", "acme", "widget", int64(targetNumber),
 	)
 	require.NoError(err)
@@ -7195,7 +7195,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T
 
 	srv.syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetIssuesByProviderByOwnerByNameByNumberWithResponse(
+	secondResp, err := client.HTTP.GetIssueWithResponse(
 		ctx, "gh", "acme", "widget", int64(targetNumber),
 	)
 	require.NoError(err)
@@ -7281,7 +7281,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 
 	require.NoError(srv.syncer.SyncMR(ctx, "acme", "widget", prNumber))
 
-	firstResp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	firstResp, err := client.HTTP.GetPullWithResponse(
 		ctx, "gh", "acme", "widget", int64(prNumber),
 	)
 	require.NoError(err)
@@ -7298,7 +7298,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 
 	require.NoError(srv.syncer.SyncMR(ctx, "acme", "widget", prNumber))
 
-	secondResp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	secondResp, err := client.HTTP.GetPullWithResponse(
 		ctx, "gh", "acme", "widget", int64(prNumber),
 	)
 	require.NoError(err)
@@ -7377,7 +7377,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 
 	require.NoError(srv.syncer.SyncIssue(ctx, "acme", "widget", issueNumber))
 
-	firstResp, err := client.HTTP.GetIssuesByProviderByOwnerByNameByNumberWithResponse(
+	firstResp, err := client.HTTP.GetIssueWithResponse(
 		ctx, "gh", "acme", "widget", int64(issueNumber),
 	)
 	require.NoError(err)
@@ -7394,7 +7394,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 
 	require.NoError(srv.syncer.SyncIssue(ctx, "acme", "widget", issueNumber))
 
-	secondResp, err := client.HTTP.GetIssuesByProviderByOwnerByNameByNumberWithResponse(
+	secondResp, err := client.HTTP.GetIssueWithResponse(
 		ctx, "gh", "acme", "widget", int64(issueNumber),
 	)
 	require.NoError(err)
@@ -7494,7 +7494,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetIssuesByProviderByOwnerByNameByNumberWithResponse(
+	firstResp, err := client.HTTP.GetIssueWithResponse(
 		ctx, "gh", "acme", "widget", int64(issueNumber),
 	)
 	require.NoError(err)
@@ -7511,7 +7511,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetIssuesByProviderByOwnerByNameByNumberWithResponse(
+	secondResp, err := client.HTTP.GetIssueWithResponse(
 		ctx, "gh", "acme", "widget", int64(issueNumber),
 	)
 	require.NoError(err)
@@ -7618,7 +7618,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	firstResp, err := client.HTTP.GetPullWithResponse(
 		ctx, "gh", "acme", "widget", int64(prNumber),
 	)
 	require.NoError(err)
@@ -7635,7 +7635,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	secondResp, err := client.HTTP.GetPullWithResponse(
 		ctx, "gh", "acme", "widget", int64(prNumber),
 	)
 	require.NoError(err)
@@ -7746,7 +7746,7 @@ func TestE2EGraphQLBulkSyncPersistsWorkflowApproval(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetPullWithResponse(
 		ctx, "gh", "acme", "widget", int64(prNumber),
 	)
 	require.NoError(err)
@@ -7872,7 +7872,7 @@ func TestE2EGraphQLBulkSyncPersistsWorkflowApprovalForForkPR(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetPullWithResponse(
 		ctx, "gh", "acme", "widget", int64(prNumber),
 	)
 	require.NoError(err)
@@ -7983,7 +7983,7 @@ func TestE2EGraphQLBulkSyncKeepsNewestCICheckBySuiteCreatedAt(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetPullWithResponse(
 		ctx, "gh", "acme", "widget", int64(prNumber),
 	)
 	require.NoError(err)
@@ -8161,7 +8161,7 @@ func TestAPIReadyForReview502OnNilPR(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse(
+	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -8179,7 +8179,7 @@ func TestAPIReadyForReviewReturnsUnderlyingErrorDetail(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse(
+	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -8243,7 +8243,7 @@ func TestAPIReadyForReviewStaleStateRefreshesAndReturnsSuccess(t *testing.T) {
 
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse(
+	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -8296,7 +8296,7 @@ func TestAPIReadyForReview404RefreshesStaleDraftState(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse(
+	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -8349,7 +8349,7 @@ func TestResolveItem_PR(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 42)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostRepoByProviderByOwnerByNameResolveByNumberWithResponse(
+	resp, err := client.HTTP.ResolveRepoItemWithResponse(
 		t.Context(), "gh", "acme", "widget", 42,
 	)
 	require.NoError(err)
@@ -8367,7 +8367,7 @@ func TestResolveItem_Issue(t *testing.T) {
 	seedIssue(t, database, "acme", "widget", 7, "open")
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostRepoByProviderByOwnerByNameResolveByNumberWithResponse(
+	resp, err := client.HTTP.ResolveRepoItemWithResponse(
 		t.Context(), "gh", "acme", "widget", 7,
 	)
 	require.NoError(err)
@@ -8383,7 +8383,7 @@ func TestResolveItem_UntrackedRepo(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostRepoByProviderByOwnerByNameResolveByNumberWithResponse(
+	resp, err := client.HTTP.ResolveRepoItemWithResponse(
 		t.Context(), "gh", "unknown", "repo", 1,
 	)
 	require.NoError(err)
@@ -8410,7 +8410,7 @@ func TestResolveItem_NotFoundOnGitHub(t *testing.T) {
 	require.NoError(err)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostRepoByProviderByOwnerByNameResolveByNumberWithResponse(
+	resp, err := client.HTTP.ResolveRepoItemWithResponse(
 		t.Context(), "gh", "acme", "widget", 999,
 	)
 	require.NoError(err)
@@ -8433,7 +8433,7 @@ func TestResolveItem_GitHubServerError(t *testing.T) {
 	require.NoError(err)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostRepoByProviderByOwnerByNameResolveByNumberWithResponse(
+	resp, err := client.HTTP.ResolveRepoItemWithResponse(
 		t.Context(), "gh", "acme", "widget", 999,
 	)
 	require.NoError(err)
@@ -9005,7 +9005,7 @@ func TestAPIGitealikeReadSyncPersistsThroughServer(t *testing.T) {
 	assert.True(mr.IsLocked)
 	assert.Equal("success", mr.CIStatus)
 
-	pullResp, err := client.HTTP.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse(
+	pullResp, err := client.HTTP.GetPullOnHostWithResponse(
 		ctx, "codeberg.test", "forgejo", "forgejo", "tea", 7,
 	)
 	require.NoError(err)
@@ -9019,7 +9019,7 @@ func TestAPIGitealikeReadSyncPersistsThroughServer(t *testing.T) {
 	require.Len(*pullResp.JSON200.Events, 1)
 	assert.Equal("looks good", (*pullResp.JSON200.Events)[0].Body)
 
-	issueResp, err := client.HTTP.GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberWithResponse(
+	issueResp, err := client.HTTP.GetIssueOnHostWithResponse(
 		ctx, "codeberg.test", "forgejo", "forgejo", "tea", 8,
 	)
 	require.NoError(err)
@@ -9160,7 +9160,7 @@ func TestAPIGitealikeHTTPMergeabilityPersistsThroughServer(t *testing.T) {
 			assert.Empty(requireMR(t, database, repo.ID, 8).MergeableState)
 			assert.Empty(requireMR(t, database, repo.ID, 9).MergeableState)
 
-			detailResp, err := client.HTTP.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse(
+			detailResp, err := client.HTTP.GetPullOnHostWithResponse(
 				ctx, tt.host, string(tt.kind), "tea", "kettle", 7,
 			)
 			require.NoError(err)
@@ -9311,9 +9311,9 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 	require.Len(mrEvents, 1)
 	assert.Equal("Still good", mrEvents[0].Body)
 
-	approveResp, err := client.HTTP.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithResponse(
+	approveResp, err := client.HTTP.ApprovePullOnHostWithResponse(
 		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
-		generated.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody{Body: "approved"},
+		generated.ApprovePullOnHostJSONRequestBody{Body: "approved"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, approveResp.StatusCode())
@@ -9321,9 +9321,9 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 	require.NoError(err)
 	assert.Len(mrEvents, 2)
 
-	mergeResp, err := client.HTTP.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithResponse(
+	mergeResp, err := client.HTTP.MergePullOnHostWithResponse(
 		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
-		generated.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody{
+		generated.MergePullOnHostJSONRequestBody{
 			Method:        "squash",
 			CommitTitle:   "Merge kettle",
 			CommitMessage: "Merge Gitea MR",
@@ -9546,7 +9546,7 @@ func TestAPIGiteaActionsSyncPersistsThroughServer(t *testing.T) {
 	mr := requireMR(t, database, repo.ID, 5)
 	require.Equal("failure", mr.CIStatus)
 
-	pullResp, err := client.HTTP.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse(
+	pullResp, err := client.HTTP.GetPullOnHostWithResponse(
 		ctx, "gitea.test", "gitea", "tea", "actions", 5,
 	)
 	require.NoError(err)
@@ -9661,9 +9661,9 @@ func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {
 	assert.Equal("dirty", requireMR(t, database, repo.ID, 7).MergeableState)
 	transport.pulls[0].Title = "Refreshed kettle after conflict"
 
-	resp, err := client.HTTP.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithResponse(
+	resp, err := client.HTTP.MergePullOnHostWithResponse(
 		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
-		generated.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody{
+		generated.MergePullOnHostJSONRequestBody{
 			Method:        "squash",
 			CommitTitle:   "Merge kettle",
 			CommitMessage: "Merge Gitea MR",
@@ -10219,7 +10219,7 @@ func TestAPIGitealikeLockedPRPersistsThroughServer(t *testing.T) {
 	assert.False(mr.IsDraft)
 	assert.True(mr.IsLocked)
 
-	pullResp, err := client.HTTP.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse(
+	pullResp, err := client.HTTP.GetPullOnHostWithResponse(
 		ctx, "codeberg.test", "forgejo", "forgejo", "tea", 7,
 	)
 	require.NoError(err)
@@ -10330,7 +10330,7 @@ func TestAPIGitealikeDraftPRFieldsPersistThroughServer(t *testing.T) {
 	require.Len(mr.Labels, 1)
 	assert.Equal("bug", mr.Labels[0].Name)
 
-	pullResp, err := client.HTTP.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse(
+	pullResp, err := client.HTTP.GetPullOnHostWithResponse(
 		ctx, "gitea.test", "gitea", "gitea", "tea", 8,
 	)
 	require.NoError(err)
@@ -10506,7 +10506,7 @@ func TestProviderIssueRouteGeneratedClientEscapesGitLabRepoPath(t *testing.T) {
 	})
 	require.NoError(err)
 
-	resp, err := client.HTTP.GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetIssueOnHostWithResponse(
 		ctx, host, provider, "Team One/Sub Team", "project+#1", number,
 	)
 	require.NoError(err)
@@ -10604,7 +10604,7 @@ func TestAPIGetFiles503WhenCloneManagerNil(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberFilesWithResponse(
+	resp, err := client.HTTP.GetPullFilesWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -10681,7 +10681,7 @@ func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 	require.NoError(err)
 	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, mergeBase, mergeBase))
 
-	filesResp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberFilesWithResponse(
+	filesResp, err := client.HTTP.GetPullFilesWithResponse(
 		ctx, "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -10692,7 +10692,7 @@ func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 	assert.False(requireWorkspaceDiffFile(t, *filesResp.JSON200.Files, "bun.lock").IsGenerated)
 	assert.False(requireWorkspaceDiffFile(t, *filesResp.JSON200.Files, "src.ts").IsGenerated)
 
-	diffResp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberDiffWithResponse(
+	diffResp, err := client.HTTP.GetPullDiffWithResponse(
 		ctx, "gh", "acme", "widget", 1,
 		nil,
 	)
@@ -11147,7 +11147,7 @@ func TestAPIGetPullDetailLoaded(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	// Before detail fetch: detail_loaded=false.
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -11178,7 +11178,7 @@ func TestAPIGetPullDetailLoaded(t *testing.T) {
 	})
 	require.NoError(err)
 
-	resp2, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	resp2, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 2,
 	)
 	require.NoError(err)
@@ -11252,8 +11252,8 @@ func TestAPIActivityReturnsUTCCreatedAt(t *testing.T) {
 	}}))
 
 	since := createdAtUTC.Add(-time.Hour).Format(time.RFC3339)
-	resp, err := client.HTTP.GetActivityWithResponse(
-		ctx, &generated.GetActivityParams{Since: &since},
+	resp, err := client.HTTP.ListActivityWithResponse(
+		ctx, &generated.ListActivityParams{Since: &since},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -11454,8 +11454,8 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	since := "2026-04-11T11:30:00Z"
-	resp, err := client.HTTP.GetActivityWithResponse(
-		ctx, &generated.GetActivityParams{Since: &since},
+	resp, err := client.HTTP.ListActivityWithResponse(
+		ctx, &generated.ListActivityParams{Since: &since},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -11474,8 +11474,8 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 	assertRFC3339UTC(t, commentItems[1].CreatedAt, time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC))
 
 	since = "2026-04-11T12:30:00Z"
-	resp, err = client.HTTP.GetActivityWithResponse(
-		ctx, &generated.GetActivityParams{Since: &since},
+	resp, err = client.HTTP.ListActivityWithResponse(
+		ctx, &generated.ListActivityParams{Since: &since},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -11586,7 +11586,7 @@ func TestAPIGetCommits(t *testing.T) {
 	assert := Assert.New(t)
 
 	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberCommitsWithResponse(
+	resp, err := client.HTTP.GetPullCommitsWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -11601,7 +11601,7 @@ func TestAPIGetCommits(t *testing.T) {
 func TestAPIGetCommits_NotFound(t *testing.T) {
 	client, _, _, _, _ := setupTestServerWithClones(t)
 
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberCommitsWithResponse(
+	resp, err := client.HTTP.GetPullCommitsWithResponse(
 		t.Context(), "gh", "acme", "widget", 999,
 	)
 	require.NoError(t, err)
@@ -11612,9 +11612,9 @@ func TestAPIGetDiff_SingleCommit(t *testing.T) {
 	require := require.New(t)
 
 	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberDiffWithResponse(
+	resp, err := client.HTTP.GetPullDiffWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
-		&generated.GetPullsByProviderByOwnerByNameByNumberDiffParams{Commit: &commitSHAs[2]},
+		&generated.GetPullDiffParams{Commit: &commitSHAs[2]},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -11670,9 +11670,9 @@ func TestAPIGetFilePreview_ReturnsDeletedFileContent(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	path := "config.yaml"
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse(
+	resp, err := client.HTTP.GetPullFilePreviewWithResponse(
 		ctx, "gh", "acme", "widgets", 1,
-		&generated.GetPullsByProviderByOwnerByNameByNumberFilePreviewParams{Path: &path},
+		&generated.GetPullFilePreviewParams{Path: &path},
 	)
 
 	require.NoError(err)
@@ -11690,9 +11690,9 @@ func TestAPIGetDiff_Range(t *testing.T) {
 	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
 	from := commitSHAs[4] // commit 1 (oldest)
 	to := commitSHAs[2]   // commit 3
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberDiffWithResponse(
+	resp, err := client.HTTP.GetPullDiffWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
-		&generated.GetPullsByProviderByOwnerByNameByNumberDiffParams{From: &from, To: &to},
+		&generated.GetPullDiffParams{From: &from, To: &to},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -11703,9 +11703,9 @@ func TestAPIGetDiff_Range(t *testing.T) {
 func TestAPIGetDiff_InvalidScope(t *testing.T) {
 	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
 	from := commitSHAs[0]
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberDiffWithResponse(
+	resp, err := client.HTTP.GetPullDiffWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
-		&generated.GetPullsByProviderByOwnerByNameByNumberDiffParams{Commit: &commitSHAs[0], From: &from},
+		&generated.GetPullDiffParams{Commit: &commitSHAs[0], From: &from},
 	)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
@@ -11714,9 +11714,9 @@ func TestAPIGetDiff_InvalidScope(t *testing.T) {
 func TestAPIGetDiff_UnknownSHA(t *testing.T) {
 	client, _, _, _, _ := setupTestServerWithClones(t)
 	bogus := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberDiffWithResponse(
+	resp, err := client.HTTP.GetPullDiffWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
-		&generated.GetPullsByProviderByOwnerByNameByNumberDiffParams{Commit: &bogus},
+		&generated.GetPullDiffParams{Commit: &bogus},
 	)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
@@ -11726,9 +11726,9 @@ func TestAPIGetDiff_ReversedRange(t *testing.T) {
 	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
 	from := commitSHAs[0] // newest
 	to := commitSHAs[4]   // oldest
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberDiffWithResponse(
+	resp, err := client.HTTP.GetPullDiffWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
-		&generated.GetPullsByProviderByOwnerByNameByNumberDiffParams{From: &from, To: &to},
+		&generated.GetPullDiffParams{From: &from, To: &to},
 	)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
@@ -11737,9 +11737,9 @@ func TestAPIGetDiff_ReversedRange(t *testing.T) {
 func TestAPIGetDiff_FromWithoutTo(t *testing.T) {
 	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
 	from := commitSHAs[0]
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberDiffWithResponse(
+	resp, err := client.HTTP.GetPullDiffWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
-		&generated.GetPullsByProviderByOwnerByNameByNumberDiffParams{From: &from},
+		&generated.GetPullDiffParams{From: &from},
 	)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
@@ -11785,9 +11785,9 @@ func TestAPIGetDiff_RootCommit(t *testing.T) {
 	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, "4b825dc642cb6eb9a060e54bf8d69288fbee4904", "4b825dc642cb6eb9a060e54bf8d69288fbee4904"))
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberDiffWithResponse(
+	resp, err := client.HTTP.GetPullDiffWithResponse(
 		t.Context(), "gh", "acme", "rootrepo", 1,
-		&generated.GetPullsByProviderByOwnerByNameByNumberDiffParams{Commit: &rootSHA},
+		&generated.GetPullDiffParams{Commit: &rootSHA},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -11815,8 +11815,8 @@ func TestAPIListActivity(t *testing.T) {
 	}))
 
 	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
-	resp, err := client.HTTP.GetActivityWithResponse(
-		ctx, &generated.GetActivityParams{Since: &since},
+	resp, err := client.HTTP.ListActivityWithResponse(
+		ctx, &generated.ListActivityParams{Since: &since},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -11838,8 +11838,8 @@ func TestAPIListActivityAcceptsHostQualifiedRepoFilter(t *testing.T) {
 
 	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
 	repo := "ghe.example.com/acme/widget"
-	resp, err := client.HTTP.GetActivityWithResponse(
-		t.Context(), &generated.GetActivityParams{Since: &since, Repo: &repo},
+	resp, err := client.HTTP.ListActivityWithResponse(
+		t.Context(), &generated.ListActivityParams{Since: &since, Repo: &repo},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -12003,7 +12003,7 @@ func TestAPIGetStackForPR(t *testing.T) {
 	seedStackedPR(t, database, "acme", "widget", 11, "feat/api-retry", "feat/api-base", db.MergeRequestStateOpen, "success", "APPROVED")
 	runStackDetection(t, database, "acme", "widget")
 
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	resp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
@@ -12012,7 +12012,7 @@ func TestAPIGetStackForPR(t *testing.T) {
 	assert.Equal("blocked", resp.JSON200.Health)
 
 	seedPR(t, database, "acme", "widget", 99)
-	resp2, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberStackWithResponse(ctx, "gh", "acme", "widget", 99)
+	resp2, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 99)
 	require.NoError(err)
 	assert.Equal(http.StatusNotFound, resp2.StatusCode())
 }
@@ -12027,7 +12027,7 @@ func TestAPIGetStackForPR_DraftNotBaseReady(t *testing.T) {
 	seedStackedPR(t, database, "acme", "widget", 11, "feat/y", "feat/x", db.MergeRequestStateOpen, "pending", "")
 	runStackDetection(t, database, "acme", "widget")
 
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberStackWithResponse(t.Context(), "gh", "acme", "widget", 10)
+	resp, err := client.HTTP.GetPullStackWithResponse(t.Context(), "gh", "acme", "widget", 10)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode())
 	require.NotNil(t, resp.JSON200)
@@ -12113,7 +12113,7 @@ func TestAPIStacks_DetectionViaSyncHook(t *testing.T) {
 	require.Len(stks, 1, "sync-hook detection should produce one stack")
 	assert.Equal("hook", stks[0].Name)
 
-	ctxResp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	ctxResp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
 	require.NoError(err)
 	require.Equal(http.StatusOK, ctxResp.StatusCode())
 	require.NotNil(ctxResp.JSON200)
@@ -12132,7 +12132,7 @@ func TestAPIGetStackForPR_SingleFailingIsInProgress(t *testing.T) {
 	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "failure", "")
 	runStackDetection(t, database, "acme", "widget")
 
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberStackWithResponse(t.Context(), "gh", "acme", "widget", 11)
+	resp, err := client.HTTP.GetPullStackWithResponse(t.Context(), "gh", "acme", "widget", 11)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode())
 	require.NotNil(t, resp.JSON200)
@@ -12151,7 +12151,7 @@ func TestAPIGetStackForPR_BaseBranchNotMain(t *testing.T) {
 	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "pending", "")
 	runStackDetection(t, database, "acme", "widget")
 
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberStackWithResponse(t.Context(), "gh", "acme", "widget", 10)
+	resp, err := client.HTTP.GetPullStackWithResponse(t.Context(), "gh", "acme", "widget", 10)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
@@ -12338,7 +12338,7 @@ func TestCICheckDedupLatestRunWinsE2E(t *testing.T) {
 	client := setupTestClient(t, srv)
 	seedPR(t, database, "acme", "widget", prNumber)
 
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
+	resp, err := client.HTTP.SyncPullWithResponse(
 		context.Background(), "gh", "acme", "widget", int64(prNumber),
 	)
 	require.NoError(err)
@@ -12597,7 +12597,7 @@ func waitForWorkspaceStatus(
 	defer ticker.Stop()
 
 	for {
-		getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(
+		getResp, err := client.HTTP.GetWorkspaceWithResponse(
 			ctx, wsID,
 		)
 		require.NoError(t, err)
@@ -12917,7 +12917,7 @@ func TestWorkspacePtyOwnerTitleMarksWorkspaceWorkingE2E(t *testing.T) {
 
 	var got *generated.WorkspaceResponse
 	require.Eventually(func() bool {
-		resp, err := fixture.client.HTTP.GetWorkspacesByIdWithResponse(ctx, ws.Id)
+		resp, err := fixture.client.HTTP.GetWorkspaceWithResponse(ctx, ws.Id)
 		if err != nil || resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
 			return false
 		}
@@ -13730,7 +13730,7 @@ exit 0
 	assert.Contains(newSession, "@middleman_owner")
 	assert.Contains(newSession, srv.workspaces.TmuxOwnerMarker())
 
-	listResp, err := client.HTTP.GetWorkspacesWithResponse(ctx)
+	listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
 	require.NoError(err)
 	require.Equal(http.StatusOK, listResp.StatusCode())
 	require.NotNil(listResp.JSON200)
@@ -13816,7 +13816,7 @@ exit 0
 	})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetWorkspacesByIdWithResponse(t.Context(), ws.ID)
+	resp, err := client.HTTP.GetWorkspaceWithResponse(t.Context(), ws.ID)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
@@ -13908,7 +13908,7 @@ exit 0
 	})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetWorkspacesByIdWithResponse(t.Context(), ws.ID)
+	resp, err := client.HTTP.GetWorkspaceWithResponse(t.Context(), ws.ID)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
@@ -14353,7 +14353,7 @@ exit 0
 		},
 	))
 
-	listResp, err := client.HTTP.GetWorkspacesWithResponse(ctx)
+	listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
 	require.NoError(err)
 	require.Equal(http.StatusOK, listResp.StatusCode())
 	require.NotNil(listResp.JSON200)
@@ -14520,7 +14520,7 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 	runGit(t, ws.WorktreePath, "add", ".")
 	runGit(t, ws.WorktreePath, "commit", "-m", "ahead 2")
 
-	listResp, err := client.HTTP.GetWorkspacesWithResponse(ctx)
+	listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
 	require.NoError(err)
 	require.Equal(http.StatusOK, listResp.StatusCode())
 	require.NotNil(listResp.JSON200)
@@ -15145,7 +15145,7 @@ func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
 		},
 	))
 
-	listResp, err := client.HTTP.GetWorkspacesWithResponse(ctx)
+	listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
 	require.NoError(err)
 	require.Equal(http.StatusOK, listResp.StatusCode())
 	require.NotNil(listResp.JSON200)
@@ -16171,7 +16171,7 @@ func TestWorkspaceCRUDE2E(t *testing.T) {
 	ctx := t.Context()
 
 	// 1. List workspaces -- initially empty.
-	listResp, err := client.HTTP.GetWorkspacesWithResponse(ctx)
+	listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
 	require.NoError(err)
 	require.Equal(http.StatusOK, listResp.StatusCode())
 	require.NotNil(listResp.JSON200)
@@ -16206,7 +16206,7 @@ func TestWorkspaceCRUDE2E(t *testing.T) {
 	waitForWorkspaceReady(t, ctx, client, wsID)
 
 	// 3. Get workspace by ID.
-	getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(
+	getResp, err := client.HTTP.GetWorkspaceWithResponse(
 		ctx, wsID,
 	)
 	require.NoError(err)
@@ -16215,7 +16215,7 @@ func TestWorkspaceCRUDE2E(t *testing.T) {
 	assert.Equal(wsID, getResp.JSON200.Id)
 
 	// 4. List workspaces -- now has one.
-	listResp2, err := client.HTTP.GetWorkspacesWithResponse(ctx)
+	listResp2, err := client.HTTP.ListWorkspacesWithResponse(ctx)
 	require.NoError(err)
 	require.Equal(http.StatusOK, listResp2.StatusCode())
 	require.NotNil(listResp2.JSON200)
@@ -16231,7 +16231,7 @@ func TestWorkspaceCRUDE2E(t *testing.T) {
 	require.Equal(http.StatusNoContent, delResp.StatusCode())
 
 	// 6. Verify deleted -- GET returns 404.
-	getResp2, err := client.HTTP.GetWorkspacesByIdWithResponse(
+	getResp2, err := client.HTTP.GetWorkspaceWithResponse(
 		ctx, wsID,
 	)
 	require.NoError(err)
@@ -16382,7 +16382,7 @@ func TestWorkspaceMRDetailHasWorkspace(t *testing.T) {
 	wsID := createResp.JSON202.Id
 
 	// MR detail should include the workspace reference.
-	mrResp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	mrResp, err := client.HTTP.GetPullWithResponse(
 		ctx, "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -16713,7 +16713,7 @@ func TestWorkspaceCreatePRAndIssueCanCoexistForSameRepoNumber(t *testing.T) {
 	assert.Equal(int64(1), issueResp.JSON202.ItemNumber)
 	assert.NotEqual(prResp.JSON202.Id, issueResp.JSON202.Id)
 
-	listResp, err := fixture.client.HTTP.GetWorkspacesWithResponse(ctx)
+	listResp, err := fixture.client.HTTP.ListWorkspacesWithResponse(ctx)
 	require.NoError(err)
 	require.Equal(http.StatusOK, listResp.StatusCode())
 	require.NotNil(listResp.JSON200)
@@ -17418,7 +17418,7 @@ func TestWorkspacePRDetailPlatformHost(t *testing.T) {
 	ctx := t.Context()
 
 	// PR on github.com
-	r1, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	r1, err := client.HTTP.GetPullWithResponse(
 		ctx, "gh", "acme", "widget", 10,
 	)
 	require.NoError(err)
@@ -17427,7 +17427,7 @@ func TestWorkspacePRDetailPlatformHost(t *testing.T) {
 	assert.Equal("github.com", r1.JSON200.PlatformHost)
 
 	// PR on ghe.example.com (same owner/name, different number)
-	r2, err := client.HTTP.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse(
+	r2, err := client.HTTP.GetPullOnHostWithResponse(
 		ctx, "ghe.example.com", "gh", "acme", "widget", 20,
 	)
 	require.NoError(err)
@@ -17530,7 +17530,7 @@ func TestWorkspaceDeleteDirty(t *testing.T) {
 	assert.Equal(http.StatusNoContent, delResp2.StatusCode())
 
 	// Verify deleted.
-	getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(
+	getResp, err := client.HTTP.GetWorkspaceWithResponse(
 		ctx, wsID,
 	)
 	require.NoError(err)
@@ -17574,7 +17574,7 @@ func TestWorkspaceDeleteDirty(t *testing.T) {
 	assert.Equal(http.StatusNoContent, del4.StatusCode())
 
 	// Verify deleted.
-	get2, err := client.HTTP.GetWorkspacesByIdWithResponse(ctx, ws2ID)
+	get2, err := client.HTTP.GetWorkspaceWithResponse(ctx, ws2ID)
 	require.NoError(err)
 	assert.Equal(http.StatusNotFound, get2.StatusCode())
 }
