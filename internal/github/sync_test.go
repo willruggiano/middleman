@@ -1668,6 +1668,62 @@ func TestIndexUpsertMergeRequestUpdatesKnownMergeableState(t *testing.T) {
 	assert.Equal("dirty", stored.MergeableState)
 }
 
+func TestIndexUpsertMergeRequestPreservesCachedCIForSameHead(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC)
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      1001,
+		Number:          1,
+		URL:             "https://github.com/owner/repo/pull/1",
+		Title:           "Cached CI PR",
+		State:           "open",
+		HeadBranch:      "feature",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "same-head",
+		CIStatus:        "failure",
+		CIChecksJSON:    `[{"name":"build","status":"completed","conclusion":"failure"}]`,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	})
+	require.NoError(err)
+
+	syncer := NewSyncer(nil, d, nil, nil, time.Minute, nil, testBudget(500))
+	err = syncer.indexUpsertMergeRequest(
+		ctx,
+		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
+		repoID,
+		platform.MergeRequest{
+			PlatformID:     1001,
+			Number:         1,
+			URL:            "https://github.com/owner/repo/pull/1",
+			Title:          "Cached CI PR",
+			State:          "open",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			HeadSHA:        "same-head",
+			CreatedAt:      now,
+			UpdatedAt:      now.Add(time.Minute),
+			LastActivityAt: now.Add(time.Minute),
+		},
+	)
+	require.NoError(err)
+
+	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("failure", stored.CIStatus)
+	assert.Contains(stored.CIChecksJSON, "build")
+}
+
 func TestPreserveMergeableStateSkipsChangedOrUnknownHeadOrBase(t *testing.T) {
 	assert := Assert.New(t)
 	tests := []struct {
@@ -1713,6 +1769,73 @@ func TestPreserveMergeableStateSkipsChangedOrUnknownHeadOrBase(t *testing.T) {
 			assert.Empty(tt.normalized.MergeableState)
 		})
 	}
+}
+
+func TestPreserveCIStateSkipsChangedOrUnknownHead(t *testing.T) {
+	assert := Assert.New(t)
+	tests := []struct {
+		name       string
+		normalized db.MergeRequest
+		existing   db.MergeRequest
+	}{
+		{
+			name:       "head changed",
+			normalized: db.MergeRequest{PlatformHeadSHA: "new-head"},
+			existing:   db.MergeRequest{PlatformHeadSHA: "old-head", CIStatus: "success", CIChecksJSON: `[{"name":"build"}]`},
+		},
+		{
+			name:       "refreshed head missing",
+			normalized: db.MergeRequest{},
+			existing:   db.MergeRequest{PlatformHeadSHA: "same-head", CIStatus: "success", CIChecksJSON: `[{"name":"build"}]`},
+		},
+		{
+			name:       "existing head missing",
+			normalized: db.MergeRequest{PlatformHeadSHA: "same-head"},
+			existing:   db.MergeRequest{CIStatus: "success", CIChecksJSON: `[{"name":"build"}]`},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			preserveCIStateIfOmitted(&tt.normalized, &tt.existing)
+			assert.Empty(tt.normalized.CIStatus)
+			assert.Empty(tt.normalized.CIChecksJSON)
+		})
+	}
+}
+
+func TestPreserveCIStateKeepsOmittedStateForMatchingHead(t *testing.T) {
+	assert := Assert.New(t)
+	normalized := db.MergeRequest{PlatformHeadSHA: "same-head"}
+	existing := db.MergeRequest{
+		PlatformHeadSHA: "same-head",
+		CIStatus:        "success",
+		CIChecksJSON:    `[{"name":"build","status":"completed","conclusion":"success"}]`,
+	}
+
+	preserveCIStateIfOmitted(&normalized, &existing)
+
+	assert.Equal("success", normalized.CIStatus)
+	assert.Contains(normalized.CIChecksJSON, "build")
+}
+
+func TestPreserveCIStateClearsCachedChecksWhenStatusChanges(t *testing.T) {
+	assert := Assert.New(t)
+	normalized := db.MergeRequest{
+		PlatformHeadSHA: "same-head",
+		CIStatus:        "success",
+	}
+	existing := db.MergeRequest{
+		PlatformHeadSHA: "same-head",
+		CIStatus:        "failure",
+		CIChecksJSON:    `[{"name":"build","status":"completed","conclusion":"failure"}]`,
+	}
+
+	needsCIDetailRefresh := preserveCIStateIfOmitted(&normalized, &existing)
+
+	assert.True(needsCIDetailRefresh)
+	assert.Equal("success", normalized.CIStatus)
+	assert.Empty(normalized.CIChecksJSON)
 }
 
 func TestPreserveMergeableStateKeepsOmittedStateForMatchingKnownIdentity(t *testing.T) {
@@ -4958,6 +5081,51 @@ func TestDetailQueueWatchedKeyIncludesProviderIdentity(t *testing.T) {
 	}
 	assert.False(watchedByPlatform[platform.KindGitHub])
 	assert.True(watchedByPlatform[platform.KindGitLab])
+}
+
+func TestDetailQueueDerivesPendingCIFromCachedChecks(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2026, 5, 21, 10, 0, 0, 0, time.UTC)
+	fetchedAt := now.Add(-5 * time.Minute)
+	repo := RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "owner",
+		Name:         "repo",
+	}
+	repoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      1001,
+		Number:          1,
+		URL:             "https://github.com/owner/repo/pull/1",
+		Title:           "pending ci",
+		State:           "open",
+		HeadBranch:      "feature",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "head-sha",
+		CIChecksJSON:    `[{"name":"build","status":"in_progress","conclusion":""}]`,
+		CIHadPending:    false,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+		DetailFetchedAt: &fetchedAt,
+	})
+	require.NoError(err)
+
+	syncer := NewSyncer(nil, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+
+	items := syncer.buildDetailQueueItems(ctx)
+	require.Len(items, 1)
+	assert.True(items[0].CIHadPending)
+	queue := BuildQueue(items, now)
+	require.Len(queue, 1)
+	assert.Equal(1, queue[0].Number)
 }
 
 func TestDetailDrainRespectsBudget(t *testing.T) {

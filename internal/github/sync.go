@@ -3083,10 +3083,12 @@ func (s *Syncer) indexUpsertMergeRequest(
 	}
 
 	// Preserve fields list endpoints commonly omit.
+	needsCIDetailRefresh := false
 	if existing != nil {
 		normalized.Additions = existing.Additions
 		normalized.Deletions = existing.Deletions
 		preserveMergeableStateIfOmitted(normalized, existing)
+		needsCIDetailRefresh = preserveCIStateIfOmitted(normalized, existing)
 	}
 
 	if normalized.Author != "" &&
@@ -3109,6 +3111,14 @@ func (s *Syncer) indexUpsertMergeRequest(
 		return fmt.Errorf(
 			"upsert MR #%d: %w", mr.Number, err,
 		)
+	}
+	if needsCIDetailRefresh {
+		if err := s.clearMRDetailFetchedByRepoID(ctx, repoID, mr.Number); err != nil {
+			return fmt.Errorf(
+				"clear detail fetch marker for MR #%d: %w",
+				mr.Number, err,
+			)
+		}
 	}
 	if err := s.replaceMergeRequestLabels(ctx, repoID, mrID, normalized.Labels); err != nil {
 		return fmt.Errorf("persist labels for MR #%d: %w", mr.Number, err)
@@ -3133,7 +3143,7 @@ func (s *Syncer) indexUpsertMergeRequest(
 // indexUpsertMR upserts a PR from list endpoint data only. No
 // GetPullRequest, no timeline, no CI. Preserves fields that the
 // list endpoint does not return (additions, deletions,
-// mergeable_state) from the existing DB row.
+// mergeable_state, cached CI) from the existing DB row.
 func (s *Syncer) indexUpsertMR(
 	ctx context.Context,
 	client Client,
@@ -3156,10 +3166,12 @@ func (s *Syncer) indexUpsertMR(
 	}
 
 	// Preserve fields the list endpoint doesn't return.
+	needsCIDetailRefresh := false
 	if existing != nil {
 		normalized.Additions = existing.Additions
 		normalized.Deletions = existing.Deletions
 		preserveMergeableStateIfOmitted(normalized, existing)
+		needsCIDetailRefresh = preserveCIStateIfOmitted(normalized, existing)
 	}
 
 	if normalized.Author != "" &&
@@ -3183,6 +3195,14 @@ func (s *Syncer) indexUpsertMR(
 		return fmt.Errorf(
 			"upsert MR #%d: %w", ghPR.GetNumber(), err,
 		)
+	}
+	if needsCIDetailRefresh {
+		if err := s.clearMRDetailFetchedByRepoID(ctx, repoID, ghPR.GetNumber()); err != nil {
+			return fmt.Errorf(
+				"clear detail fetch marker for MR #%d: %w",
+				ghPR.GetNumber(), err,
+			)
+		}
 	}
 	if err := s.replaceMergeRequestLabels(ctx, repoID, mrID, normalized.Labels); err != nil {
 		return fmt.Errorf("persist labels for MR #%d: %w", ghPR.GetNumber(), err)
@@ -4545,6 +4565,14 @@ func (s *Syncer) updateMRDetailFetchedByRepoID(
 	)
 }
 
+func (s *Syncer) clearMRDetailFetchedByRepoID(
+	ctx context.Context,
+	repoID int64,
+	number int,
+) error {
+	return s.db.ClearMRDetailFetchedByRepoID(ctx, repoID, number)
+}
+
 func (s *Syncer) updateIssueDetailFetchedByRepoID(
 	ctx context.Context,
 	repoID int64,
@@ -5671,6 +5699,7 @@ func (s *Syncer) buildDetailQueueItems(
 			platform.Kind(repo.Platform), repo.PlatformHost,
 			repo.Owner, repo.Name,
 		) + fmt.Sprintf("#%d", pr.Number)
+		ciHadPending := pr.CIHadPending || ciHasPending(pr.CIChecksJSON)
 		items = append(items, QueueItem{
 			Type:            QueueItemPR,
 			Platform:        platform.Kind(repo.Platform),
@@ -5680,7 +5709,7 @@ func (s *Syncer) buildDetailQueueItems(
 			PlatformHost:    repo.PlatformHost,
 			UpdatedAt:       pr.UpdatedAt,
 			DetailFetchedAt: pr.DetailFetchedAt,
-			CIHadPending:    pr.CIHadPending,
+			CIHadPending:    ciHadPending,
 			Starred:         pr.Starred,
 			Watched:         watched[watchKey],
 			IsOpen:          true,
@@ -6254,6 +6283,30 @@ func preserveMergeableStateIfOmitted(
 		(normalized.MergeableState == "unknown" && existing.MergeableState != "") {
 		normalized.MergeableState = existing.MergeableState
 	}
+}
+
+func preserveCIStateIfOmitted(
+	normalized *db.MergeRequest,
+	existing *db.MergeRequest,
+) bool {
+	if normalized == nil || existing == nil {
+		return false
+	}
+	if normalized.PlatformHeadSHA == "" ||
+		existing.PlatformHeadSHA == "" ||
+		normalized.PlatformHeadSHA != existing.PlatformHeadSHA {
+		return false
+	}
+	ciStatusOmitted := normalized.CIStatus == ""
+	ciStatusChanged := !ciStatusOmitted &&
+		normalized.CIStatus != existing.CIStatus
+	if normalized.CIStatus == "" {
+		normalized.CIStatus = existing.CIStatus
+	}
+	if normalized.CIChecksJSON == "" && !ciStatusChanged {
+		normalized.CIChecksJSON = existing.CIChecksJSON
+	}
+	return ciStatusChanged && normalized.CIChecksJSON == ""
 }
 
 // syncMRDiff fetches the bare clone and computes diff SHAs for a single PR.
