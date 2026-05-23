@@ -15908,6 +15908,10 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 		[]byte("package dirty\n"), 0o644,
 	))
 	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, ".workspace-state.json"),
+		[]byte("{}\n"), 0o644,
+	))
+	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, "z-blank.txt"),
 		[]byte(" \t\n"), 0o644,
 	))
@@ -15926,7 +15930,13 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 	assertWorkspaceDiffPaths(
 		t,
 		*headFiles.Files,
-		[]string{"base.txt", "dirty.go", "z-blank.txt", "z-empty.txt"},
+		[]string{
+			".workspace-state.json",
+			"base.txt",
+			"dirty.go",
+			"z-blank.txt",
+			"z-empty.txt",
+		},
 	)
 
 	headFilesHideWhitespace := requestWorkspaceFiles(
@@ -15936,7 +15946,7 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 	assertWorkspaceDiffPaths(
 		t,
 		*headFilesHideWhitespace.Files,
-		[]string{"dirty.go", "z-empty.txt"},
+		[]string{".workspace-state.json", "dirty.go", "z-empty.txt"},
 	)
 
 	headDiffHideWhitespace := requestWorkspaceDiff(
@@ -15946,7 +15956,7 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 	assertWorkspaceDiffPaths(
 		t,
 		*headDiffHideWhitespace.Files,
-		[]string{"dirty.go", "z-empty.txt"},
+		[]string{".workspace-state.json", "dirty.go", "z-empty.txt"},
 	)
 
 	pushedDiff := requestWorkspaceDiff(t, srv, ws.Id, "pushed")
@@ -15954,7 +15964,14 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 	assertWorkspaceDiffPaths(
 		t,
 		*pushedDiff.Files,
-		[]string{"base.txt", "committed.go", "dirty.go", "z-blank.txt", "z-empty.txt"},
+		[]string{
+			".workspace-state.json",
+			"base.txt",
+			"committed.go",
+			"dirty.go",
+			"z-blank.txt",
+			"z-empty.txt",
+		},
 	)
 	assert.Equal(int64(1), pushedDiff.WhitespaceOnlyCount)
 }
