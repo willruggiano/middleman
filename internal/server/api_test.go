@@ -6105,6 +6105,50 @@ func TestAPIListIssuesSearchByNumber(t *testing.T) {
 	assert.ElementsMatch([]int{12, 278, 290}, issueNumbers(&generated.ListIssuesParams{Q: &q}))
 }
 
+func TestAPIListItemsHonorsLimit(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+
+	seedPR(t, database, "acme", "widget", 12)
+	seedPR(t, database, "acme", "widget", 278)
+	seedIssue(t, database, "acme", "widget", 12, "open")
+	seedIssue(t, database, "acme", "widget", 278, "open")
+
+	client := setupTestClient(t, srv)
+	limit := int64(1)
+
+	pullsResp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{Limit: &limit})
+	require.NoError(err)
+	require.Equal(http.StatusOK, pullsResp.StatusCode())
+	require.NotNil(pullsResp.JSON200)
+	require.Len(*pullsResp.JSON200, 1)
+	assert.EqualValues(278, (*pullsResp.JSON200)[0].Number)
+
+	offset := int64(1)
+	secondPullResp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{Limit: &limit, Offset: &offset})
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondPullResp.StatusCode())
+	require.NotNil(secondPullResp.JSON200)
+	require.Len(*secondPullResp.JSON200, 1)
+	assert.EqualValues(12, (*secondPullResp.JSON200)[0].Number)
+
+	issuesResp, err := client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesParams{Limit: &limit})
+	require.NoError(err)
+	require.Equal(http.StatusOK, issuesResp.StatusCode())
+	require.NotNil(issuesResp.JSON200)
+	require.Len(*issuesResp.JSON200, 1)
+	assert.EqualValues(278, (*issuesResp.JSON200)[0].Number)
+
+	secondIssueResp, err := client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesParams{Limit: &limit, Offset: &offset})
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondIssueResp.StatusCode())
+	require.NotNil(secondIssueResp.JSON200)
+	require.Len(*secondIssueResp.JSON200, 1)
+	assert.EqualValues(12, (*secondIssueResp.JSON200)[0].Number)
+}
+
 func TestAPIListPullsReportsBackfilledMergedPRFromMergedAt(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
