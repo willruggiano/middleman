@@ -51,6 +51,7 @@
   import { floatingPopoverStyle } from "../shared/floatingPosition.js";
   import DiffFilesLayout from "../diff/DiffFilesLayout.svelte";
   import CIStatus from "./CIStatus.svelte";
+  import StackStatus from "./StackStatus.svelte";
   import DiffSummaryChip from "./DiffSummaryChip.svelte";
   import CopyItemNumber from "./CopyItemNumber.svelte";
   import { DiffSummaryFilesResult } from "./diff-summary.js";
@@ -68,6 +69,7 @@
     savePRTimelineFilter,
     type PRTimelineFilterState,
   } from "./prTimelineFilter.js";
+  import type { PullRequestRouteRef } from "../../routes.js";
 
   const CLEAR_LABELS_PENDING = "__clear-label-selection__";
 
@@ -113,6 +115,7 @@
     hideStaleWhileLoading?: boolean;
     autoSync?: DetailSyncMode;
     workflowApprovalSync?: boolean;
+    onStackMemberNavigate?: (ref: PullRequestRouteRef) => boolean | void;
   }
 
   const {
@@ -128,6 +131,7 @@
     hideStaleWhileLoading = false,
     autoSync = "background",
     workflowApprovalSync = true,
+    onStackMemberNavigate,
   }: Props = $props();
 
   const routeRef = $derived({
@@ -148,7 +152,8 @@
   });
 
   let activeTab = $state<"conversation" | "files">("conversation");
-  let ciExpanded = $state(false);
+  let expandedPanel = $state<"ci" | "stack" | null>(null);
+  let keepStackExpandedOnRouteChange = false;
   let timelineFilter = $state<PRTimelineFilterState>(
     loadPRTimelineFilter(),
   );
@@ -245,7 +250,7 @@
   const shouldAutoRefreshCI = $derived.by(() => {
     const pr = currentPR();
     return Boolean(
-      ciExpanded &&
+      expandedPanel === "ci" &&
       !stalePR &&
       pr?.State === "open" &&
       ciChecksHavePending(pr.CIChecksJSON),
@@ -315,7 +320,14 @@
     void owner;
     void name;
     void number;
+    const keepStackExpanded = untrack(() => {
+      const keepExpanded = keepStackExpandedOnRouteChange &&
+        expandedPanel === "stack";
+      keepStackExpandedOnRouteChange = false;
+      return keepExpanded;
+    });
     showMergeModal = false;
+    expandedPanel = keepStackExpanded ? "stack" : null;
     editingTitle = false;
     editingBody = false;
     titleDraft = "";
@@ -1333,8 +1345,24 @@
           name={name}
           number={pr.Number}
           prKey={pr.PlatformExternalID}
-          bind:expanded={ciExpanded}
+          expanded={expandedPanel === "ci"}
+          ontoggle={(next) => { expandedPanel = next ? "ci" : null; }}
           showPanel={false}
+        />
+        <StackStatus
+          {owner}
+          {name}
+          {number}
+          {provider}
+          {platformHost}
+          {repoPath}
+          expanded={expandedPanel === "stack"}
+          ontoggle={(next) => { expandedPanel = next ? "stack" : null; }}
+          onmembernavigate={(ref) => {
+            keepStackExpandedOnRouteChange = true;
+            expandedPanel = "stack";
+            return onStackMemberNavigate?.(ref);
+          }}
         />
         {#if pr.ReviewDecision}
           <ReviewDecisionChip
@@ -1388,7 +1416,7 @@
           name={name}
           number={pr.Number}
           prKey={pr.PlatformExternalID}
-          bind:expanded={ciExpanded}
+          expanded={expandedPanel === "ci"}
           showButton={false}
         />
       </div>

@@ -7,14 +7,15 @@
   import PullDetail
     from "../components/detail/PullDetail.svelte";
   import DiffFilesLayout from "../components/diff/DiffFilesLayout.svelte";
-  import StackSidebar
-    from "../components/detail/StackSidebar.svelte";
   import type { DetailSyncMode } from "../stores/detail.svelte.js";
   import {
+    buildFocusPullRequestRoute,
     buildPullRequestFilesRoute,
     buildPullRequestRoute,
     type PullRequestRouteRef,
   } from "../routes.js";
+
+  type StackMemberNavigate = (ref: PullRequestRouteRef) => boolean | void;
 
   const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
   const navigate = getNavigate();
@@ -25,12 +26,13 @@
     isSidebarCollapsed?: boolean;
     hideSidebar?: boolean;
     sidebarWidth?: number;
-    showStackSidebar?: boolean;
     autoSyncDetail?: DetailSyncMode;
     hideStaleDetailWhileLoading?: boolean;
     workflowApprovalSync?: boolean;
+    routeFamily?: "canonical" | "focus";
     onSidebarResize?: (width: number) => void;
     onDetailTabChange?: (tab: "conversation" | "files") => void;
+    onStackMemberNavigate?: StackMemberNavigate;
   }
 
   let {
@@ -39,12 +41,13 @@
     isSidebarCollapsed = false,
     hideSidebar = false,
     sidebarWidth = 340,
-    showStackSidebar = true,
     autoSyncDetail = "background",
     hideStaleDetailWhileLoading = false,
     workflowApprovalSync = true,
+    routeFamily = "canonical",
     onSidebarResize,
     onDetailTabChange,
+    onStackMemberNavigate,
   }: Props = $props();
 
   function selectDetailTab(tab: "conversation" | "files"): void {
@@ -58,6 +61,13 @@
         ? buildPullRequestFilesRoute(selectedPR)
         : buildPullRequestRoute(selectedPR),
     );
+  }
+
+  function handleStackMemberNavigate(ref: PullRequestRouteRef): boolean | void {
+    if (onStackMemberNavigate) return onStackMemberNavigate(ref);
+    if (routeFamily !== "focus") return undefined;
+    navigate(buildFocusPullRequestRoute(ref));
+    return true;
   }
 </script>
 
@@ -118,6 +128,7 @@
         {workflowApprovalSync}
         hideTabs={true}
         hideStaleWhileLoading={hideStaleDetailWhileLoading}
+        onStackMemberNavigate={handleStackMemberNavigate}
       />
     {/if}
   {:else}
@@ -128,19 +139,6 @@
       </p>
     </div>
   {/if}
-
-  {#snippet trailing()}
-    {#if showStackSidebar && selectedPR !== null}
-      <StackSidebar
-        owner={selectedPR.owner}
-        name={selectedPR.name}
-        number={selectedPR.number}
-        provider={selectedPR.provider}
-        platformHost={selectedPR.platformHost}
-        repoPath={selectedPR.repoPath}
-      />
-    {/if}
-  {/snippet}
 </CollapsibleResizableSidebar>
 
 <style>
