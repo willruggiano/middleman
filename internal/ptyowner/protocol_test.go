@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -60,8 +61,91 @@ func TestSessionPathsUsePrivateSocketDirForLongRoots(t *testing.T) {
 	require.NoError(err)
 	require.NotEmpty(paths.SocketDir)
 	assert.Equal(filepath.Join(paths.SocketDir, "sock"), paths.Socket)
-	assert.Contains(paths.SocketDir, filepath.Join(os.TempDir(), "middleman-pty-"))
+	assert.Equal(fallbackSocketDir(root, "middleman-abc123", os.TempDir()), paths.SocketDir)
 	assert.LessOrEqual(len(paths.Socket), maxUnixSocketPathLen)
+}
+
+func TestSessionPathsUseShortPrivateTmpWhenTempDirIsTooLong(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("/private/tmp is a macOS-specific socket fallback")
+	}
+	assert := Assert.New(t)
+	require := require.New(t)
+	root := filepath.Join(t.TempDir(), strings.Repeat("x", maxUnixSocketPathLen))
+	longTempDir := filepath.Join(t.TempDir(), strings.Repeat("long-temp-root-", 8))
+	t.Setenv("TMPDIR", longTempDir)
+
+	paths, err := NewSessionPaths(root, "middleman-abc123")
+
+	require.NoError(err)
+	expectedDir := filepath.Join(
+		"/private/tmp",
+		"middleman-pty-"+sessionSocketHash(root+"-middleman-abc123"),
+	)
+	assert.Equal(expectedDir, paths.SocketDir)
+	assert.Equal(filepath.Join(expectedDir, "sock"), paths.Socket)
+	assert.LessOrEqual(len(paths.Socket), maxUnixSocketPathLen)
+}
+
+func TestFallbackSocketDirSkipsPrivateTmpOffDarwin(t *testing.T) {
+	assert := Assert.New(t)
+	root := filepath.Join(t.TempDir(), strings.Repeat("x", maxUnixSocketPathLen))
+	longTempDir := filepath.Join(t.TempDir(), strings.Repeat("long-temp-root-", 8))
+
+	socketDir := fallbackSocketDirForOS(root, "middleman-abc123", longTempDir, "linux")
+
+	expectedDir := filepath.Join(
+		"/tmp",
+		"middleman-pty-"+sessionSocketHash(root+"-middleman-abc123"),
+	)
+	assert.Equal(expectedDir, socketDir)
+	assert.LessOrEqual(len(filepath.Join(socketDir, "sock")), maxUnixSocketPathLen)
+}
+
+func TestFallbackSocketDirUsesPrivateTmpOnDarwin(t *testing.T) {
+	assert := Assert.New(t)
+	root := filepath.Join(t.TempDir(), strings.Repeat("x", maxUnixSocketPathLen))
+	longTempDir := filepath.Join(t.TempDir(), strings.Repeat("long-temp-root-", 8))
+
+	socketDir := fallbackSocketDirForOS(root, "middleman-abc123", longTempDir, "darwin")
+
+	expectedDir := filepath.Join(
+		"/private/tmp",
+		"middleman-pty-"+sessionSocketHash(root+"-middleman-abc123"),
+	)
+	assert.Equal(expectedDir, socketDir)
+	assert.LessOrEqual(len(filepath.Join(socketDir, "sock")), maxUnixSocketPathLen)
+}
+
+func TestCreatePrivateSocketDirRejectsSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink fallback socket hardening is Unix-specific")
+	}
+	require := require.New(t)
+	parent := t.TempDir()
+	target := filepath.Join(parent, "target")
+	socketDir := filepath.Join(parent, "middleman-pty-symlink")
+	require.NoError(os.Mkdir(target, 0o700))
+	require.NoError(os.Symlink(target, socketDir))
+
+	err := createPrivateSocketDir(socketDir)
+
+	require.Error(err)
+	require.ErrorContains(err, "refusing fallback socket dir symlink")
+}
+
+func TestCreatePrivateSocketDirRejectsSharedExistingDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix mode fallback socket hardening is Unix-specific")
+	}
+	require := require.New(t)
+	socketDir := filepath.Join(t.TempDir(), "middleman-pty-shared")
+	require.NoError(os.Mkdir(socketDir, 0o755))
+
+	err := createPrivateSocketDir(socketDir)
+
+	require.Error(err)
+	require.ErrorContains(err, "expected private directory")
 }
 
 func TestProtocolRequestRoundTrip(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -37,7 +38,7 @@ func NewSessionPaths(root, session string) (SessionPaths, error) {
 	socket := filepath.Join(root, "sock-"+sessionSocketHash(session))
 	socketDir := ""
 	if len(socket) > maxUnixSocketPathLen {
-		socketDir = filepath.Join(os.TempDir(), "middleman-pty-"+sessionSocketHash(root+"-"+session))
+		socketDir = fallbackSocketDir(root, session, os.TempDir())
 		socket = filepath.Join(socketDir, "sock")
 	}
 	return SessionPaths{
@@ -51,6 +52,25 @@ func NewSessionPaths(root, session string) (SessionPaths, error) {
 }
 
 const maxUnixSocketPathLen = 100
+
+func fallbackSocketDir(root, session, primaryTempDir string) string {
+	return fallbackSocketDirForOS(root, session, primaryTempDir, runtime.GOOS)
+}
+
+func fallbackSocketDirForOS(root, session, primaryTempDir, goos string) string {
+	bases := []string{primaryTempDir}
+	if goos == "darwin" {
+		bases = append(bases, "/private/tmp")
+	}
+	bases = append(bases, "/tmp")
+	for _, base := range bases {
+		candidate := filepath.Join(base, "middleman-pty-"+sessionSocketHash(root+"-"+session))
+		if len(filepath.Join(candidate, "sock")) <= maxUnixSocketPathLen {
+			return candidate
+		}
+	}
+	return filepath.Join("/tmp", "middleman-pty-"+sessionSocketHash(root+"-"+session))
+}
 
 func sessionDirName(session string) string {
 	if strings.ContainsAny(session, `<>:"|?*`) {

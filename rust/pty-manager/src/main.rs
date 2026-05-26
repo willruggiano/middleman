@@ -15,7 +15,7 @@ use std::io::{self, BufRead, BufReader, Write};
 #[cfg(windows)]
 use std::net::{TcpListener, TcpStream};
 #[cfg(unix)]
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 #[cfg(unix)]
 use std::os::unix::net::{UnixListener, UnixStream};
 #[cfg(windows)]
@@ -216,7 +216,7 @@ fn run_owner(args: Args) -> Result<()> {
     create_private_dir(&args.root).context("create pty manager root dir")?;
     create_private_dir(&paths.dir).context("create session state dir")?;
     if let Some(socket_dir) = &paths.socket_dir {
-        create_private_dir(socket_dir).context("create fallback socket dir")?;
+        create_private_socket_dir(socket_dir).context("create fallback socket dir")?;
     }
     let mut cleanup = OwnerCleanup::new(paths.clone());
 
@@ -870,6 +870,60 @@ fn create_private_dir(path: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
+fn create_private_socket_dir(path: &Path) -> Result<()> {
+    let mut builder = fs::DirBuilder::new();
+    builder.mode(0o700);
+    match builder.create(path) {
+        Ok(()) => return Ok(()),
+        Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
+        Err(err) => return Err(err).with_context(|| format!("create {}", path.display())),
+    }
+
+    let metadata =
+        fs::symlink_metadata(path).with_context(|| format!("inspect {}", path.display()))?;
+    if metadata.file_type().is_symlink() {
+        bail!("refusing fallback socket dir symlink {}", path.display());
+    }
+    if !metadata.is_dir() {
+        bail!(
+            "fallback socket path is not a directory: {}",
+            path.display()
+        );
+    }
+    let current_uid = current_uid();
+    if metadata.uid() != current_uid {
+        bail!(
+            "fallback socket dir {} is owned by uid {}, not current uid {}",
+            path.display(),
+            metadata.uid(),
+            current_uid
+        );
+    }
+    if metadata.mode() & 0o077 != 0 {
+        bail!(
+            "fallback socket dir {} has permissions {:o}; expected private directory",
+            path.display(),
+            metadata.mode() & 0o777
+        );
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn create_private_socket_dir(path: &Path) -> Result<()> {
+    create_private_dir(path)
+}
+
+#[cfg(unix)]
+fn current_uid() -> u32 {
+    unsafe extern "C" {
+        fn geteuid() -> u32;
+    }
+    // SAFETY: geteuid has no preconditions and does not dereference pointers.
+    unsafe { geteuid() }
+}
+
 #[cfg(windows)]
 fn restrict_windows_acl(path: &Path, directory: bool) -> Result<()> {
     let current_user_sid = current_user_sid_string()?;
@@ -1070,10 +1124,7 @@ fn session_paths(root: &Path, session: &str) -> Result<SessionPaths> {
     let mut socket = root.join(format!("sock-{}", socket_hash(session)));
     let mut socket_dir = None;
     if socket.to_string_lossy().len() > MAX_UNIX_SOCKET_PATH_LEN {
-        let fallback_dir = env::temp_dir().join(format!(
-            "middleman-pty-{}",
-            socket_hash(&format!("{}-{session}", root.display()))
-        ));
+        let fallback_dir = fallback_socket_dir(root, session, &env::temp_dir());
         socket = fallback_dir.join("sock");
         socket_dir = Some(fallback_dir);
     }
@@ -1084,6 +1135,34 @@ fn session_paths(root: &Path, session: &str) -> Result<SessionPaths> {
         socket,
         socket_dir,
     })
+}
+
+fn fallback_socket_dir(root: &Path, session: &str, primary_temp_dir: &Path) -> PathBuf {
+    fallback_socket_dir_for_platform(root, session, primary_temp_dir, cfg!(target_os = "macos"))
+}
+
+fn fallback_socket_dir_for_platform(
+    root: &Path,
+    session: &str,
+    primary_temp_dir: &Path,
+    include_darwin_private_tmp: bool,
+) -> PathBuf {
+    let dir_name = format!(
+        "middleman-pty-{}",
+        socket_hash(&format!("{}-{session}", root.display()))
+    );
+    let mut bases = vec![primary_temp_dir];
+    if include_darwin_private_tmp {
+        bases.push(Path::new("/private/tmp"));
+    }
+    bases.push(Path::new("/tmp"));
+    for base in bases {
+        let candidate = base.join(&dir_name);
+        if candidate.join("sock").to_string_lossy().len() <= MAX_UNIX_SOCKET_PATH_LEN {
+            return candidate;
+        }
+    }
+    Path::new("/tmp").join(dir_name)
 }
 
 fn session_dir_name(session: &str) -> String {
@@ -1286,7 +1365,15 @@ mod tests {
 
         assert_eq!(paths.dir, root.join("middleman-abc123"));
         let socket_dir = paths.socket_dir.as_ref().unwrap();
-        assert!(socket_dir.starts_with(env::temp_dir()));
+        let temp_socket = env::temp_dir()
+            .join(format!(
+                "middleman-pty-{}",
+                socket_hash(&format!("{}-middleman-abc123", root.display()))
+            ))
+            .join("sock");
+        if temp_socket.to_string_lossy().len() <= MAX_UNIX_SOCKET_PATH_LEN {
+            assert!(socket_dir.starts_with(env::temp_dir()));
+        }
         let expected_file_name = format!(
             "middleman-pty-{}",
             socket_hash(&format!("{}-middleman-abc123", root.display()))
@@ -1297,6 +1384,73 @@ mod tests {
         );
         assert_eq!(paths.socket, socket_dir.join("sock"));
         assert!(paths.socket.to_string_lossy().len() <= MAX_UNIX_SOCKET_PATH_LEN);
+    }
+
+    #[test]
+    fn fallback_socket_dir_uses_private_tmp_when_temp_dir_is_too_long() {
+        let root = PathBuf::from("/tmp").join("x".repeat(MAX_UNIX_SOCKET_PATH_LEN));
+        let long_temp_dir = PathBuf::from("/tmp").join("long-temp-root-".repeat(8));
+
+        let socket_dir =
+            fallback_socket_dir_for_platform(&root, "middleman-abc123", &long_temp_dir, true);
+
+        assert_eq!(
+            socket_dir,
+            Path::new("/private/tmp").join(format!(
+                "middleman-pty-{}",
+                socket_hash(&format!("{}-middleman-abc123", root.display()))
+            ))
+        );
+        assert!(socket_dir.join("sock").to_string_lossy().len() <= MAX_UNIX_SOCKET_PATH_LEN);
+    }
+
+    #[test]
+    fn fallback_socket_dir_skips_private_tmp_off_macos() {
+        let root = PathBuf::from("/tmp").join("x".repeat(MAX_UNIX_SOCKET_PATH_LEN));
+        let long_temp_dir = PathBuf::from("/tmp").join("long-temp-root-".repeat(8));
+
+        let socket_dir =
+            fallback_socket_dir_for_platform(&root, "middleman-abc123", &long_temp_dir, false);
+
+        assert_eq!(
+            socket_dir,
+            Path::new("/tmp").join(format!(
+                "middleman-pty-{}",
+                socket_hash(&format!("{}-middleman-abc123", root.display()))
+            ))
+        );
+        assert!(socket_dir.join("sock").to_string_lossy().len() <= MAX_UNIX_SOCKET_PATH_LEN);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_private_socket_dir_rejects_symlink() {
+        let parent = env::temp_dir().join(format!("mm-pty-symlink-test-{}", new_token()));
+        let target = parent.join("target");
+        let socket_dir = parent.join("middleman-pty-symlink");
+        fs::create_dir_all(&target).unwrap();
+        std::os::unix::fs::symlink(&target, &socket_dir).unwrap();
+
+        let err = create_private_socket_dir(&socket_dir).unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("refusing fallback socket dir symlink")
+        );
+        let _ = fs::remove_dir_all(&parent);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_private_socket_dir_rejects_shared_existing_dir() {
+        let socket_dir = env::temp_dir().join(format!("mm-pty-shared-test-{}", new_token()));
+        fs::create_dir(&socket_dir).unwrap();
+        fs::set_permissions(&socket_dir, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let err = create_private_socket_dir(&socket_dir).unwrap_err();
+
+        assert!(err.to_string().contains("expected private directory"));
+        let _ = fs::remove_dir_all(&socket_dir);
     }
 
     #[cfg(windows)]
