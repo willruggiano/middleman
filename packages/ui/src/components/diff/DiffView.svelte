@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { getStores } from "../../context.js";
+  import type { DiffScrollTarget } from "../../stores/diff.svelte.js";
+  import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
 
   const stores = getStores();
   const diffStore = stores.diff;
@@ -100,13 +102,18 @@
     });
   });
 
+  function scrollWithinDiffArea(el: Element, offset = 0): void {
+    if (!diffArea) return;
+    const areaRect = diffArea.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    diffArea.scrollTop += elRect.top - areaRect.top - offset;
+  }
+
   function scrollToFile(path: string): boolean {
     if (!diffArea) return false;
     const el = diffArea.querySelector(`[data-file-path="${CSS.escape(path)}"]`);
     if (el) {
-      const areaRect = diffArea.getBoundingClientRect();
-      const elRect = el.getBoundingClientRect();
-      diffArea.scrollTop += elRect.top - areaRect.top;
+      scrollWithinDiffArea(el);
     } else {
       return false;
     }
@@ -116,13 +123,45 @@
     return true;
   }
 
+  function scrollToTarget(target: DiffScrollTarget): boolean {
+    if (!diffArea) return false;
+    if (target.line == null) return scrollToFile(target.path);
+
+    const attr = target.side === "left" ? "data-diff-old-line" : "data-diff-new-line";
+    const lineEl = diffArea.querySelector(
+      `[data-diff-path="${CSS.escape(target.path)}"][${attr}="${CSS.escape(String(target.line))}"]`,
+    ) as HTMLElement | null;
+    if (!lineEl) return scrollToFile(target.path);
+
+    scrollWithinDiffArea(lineEl, 72);
+    lineEl.focus({ preventScroll: true });
+    scrollRaf = requestAnimationFrame(() => diffStore.clearScrolling());
+    return true;
+  }
+
+  function jumpToDraftComment(comment: DiffReviewDraftComment): void {
+    if (!diffArea) return;
+    const el = diffArea.querySelector(
+      `[data-draft-comment-id="${CSS.escape(comment.id)}"]`,
+    ) as HTMLElement | null;
+    if (!el) {
+      void scrollToFile(comment.path);
+      return;
+    }
+    const areaRect = diffArea.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    diffArea.scrollTop += elRect.top - areaRect.top - 72;
+    el.focus({ preventScroll: true });
+    scrollRaf = requestAnimationFrame(() => diffStore.clearScrolling());
+  }
+
   // Watch for scroll requests from the sidebar file list (via the store).
   // Only consume the target once diffArea is mounted and diff data is available,
   // so the request is not lost if the user clicks a file before diff renders.
   $effect(() => {
     const target = diffStore.getScrollTarget();
     if (target && diffArea && diff) {
-      if (scrollToFile(target)) {
+      if (scrollToTarget(target)) {
         diffStore.consumeScrollTarget();
       }
     }
@@ -242,7 +281,7 @@
             {#if reviewWarning}
               <div class="review-warning">{reviewWarning}</div>
             {/if}
-            <DiffReviewDraftTray />
+            <DiffReviewDraftTray onjump={jumpToDraftComment} />
           {/if}
         </div>
       </div>

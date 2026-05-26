@@ -3,7 +3,9 @@ import { compile } from "svelte/compiler";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import componentSource from "./EventTimeline.svelte?raw";
 import EventTimeline from "./EventTimeline.svelte";
-import type { PREvent } from "../../api/types.js";
+import { STORES_KEY } from "../../context.js";
+import type { DiffResult, PREvent } from "../../api/types.js";
+import type { DiffStore } from "../../stores/diff.svelte.js";
 
 const compiledCss = compile(
   componentSource,
@@ -25,8 +27,73 @@ function makeEvent(overrides: Partial<PREvent> = {}): PREvent {
     }),
     DedupeKey: "force-push-1",
     CreatedAt: "2024-06-01T12:00:00Z",
+    ThreadID: null,
+    Resolvable: false,
+    Resolved: false,
     ...overrides,
   } as PREvent;
+}
+
+function makeReviewThreadEvent(overrides: Partial<PREvent> = {}): PREvent {
+  return makeEvent({
+    EventType: "review_comment",
+    Body: "Please keep this setup explicit.",
+    Summary: "",
+    diff_thread: {
+      id: "thread-1",
+      path: "src/review.ts",
+      side: "right",
+      start_side: "right",
+      start_line: 10,
+      line: 11,
+      new_line: 11,
+      line_type: "add",
+      body: "Please keep this setup explicit.",
+      author_login: "alice",
+      resolved: false,
+      can_resolve: true,
+      created_at: "2024-06-01T12:00:00Z",
+      updated_at: "2024-06-01T12:00:00Z",
+    },
+    ...overrides,
+  } as Partial<PREvent>);
+}
+
+function makeDiffStore(overrides: Partial<DiffStore> = {}): DiffStore {
+  const diff: DiffResult = {
+    stale: false,
+    whitespace_only_count: 0,
+    files: [{
+      path: "src/review.ts",
+      old_path: "src/review.ts",
+      status: "modified",
+      is_binary: false,
+      is_whitespace_only: false,
+      additions: 2,
+      deletions: 0,
+      hunks: [{
+        old_start: 9,
+        old_count: 1,
+        new_start: 9,
+        new_count: 3,
+        lines: [
+          { type: "context", old_num: 9, new_num: 9, content: "const client = setup();" },
+          { type: "add", new_num: 10, content: "client.enableReviews();" },
+          { type: "add", new_num: 11, content: "client.publishThreads();" },
+          { type: "context", old_num: 10, new_num: 12, content: "return client;" },
+        ],
+      }],
+    }],
+  };
+
+  return {
+    getDiff: () => diff,
+    isDiffLoading: () => false,
+    getCurrentPR: () => ({ owner: "acme", name: "widget", number: 7 }),
+    loadDiff: vi.fn(),
+    requestScrollToLine: vi.fn(),
+    ...overrides,
+  } as unknown as DiffStore;
 }
 
 function findCompiledStyleRule(
@@ -170,6 +237,84 @@ describe("EventTimeline", () => {
     );
     expect(threadText.indexOf("Middle threaded reply")).toBeLessThan(
       threadText.indexOf("Oldest threaded reply"),
+    );
+  });
+
+  it("renders positioned discussion threads with the same root and reply ordering", () => {
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 12,
+            EventType: "issue_comment",
+            Author: "author",
+            Body: "Pushed an update",
+            ThreadID: "disc-positioned",
+            CreatedAt: "2024-06-01T12:02:00Z",
+          }),
+          makeEvent({
+            ID: 10,
+            EventType: "issue_comment",
+            Author: "reviewer",
+            Body: "This needs a named helper",
+            ThreadID: "disc-positioned",
+            diff_thread: {
+              id: "disc-positioned",
+              provider_comment_id: "10",
+              path: "src/review.ts",
+              old_path: "src/review.ts",
+              side: "right",
+              line: 11,
+              new_line: 11,
+              line_type: "add",
+              diff_head_sha: "head-sha",
+              commit_sha: "head-sha",
+              body: "This needs a named helper",
+              author_login: "reviewer",
+              resolved: false,
+              can_resolve: false,
+              created_at: "2024-06-01T12:00:00Z",
+              updated_at: "2024-06-01T12:00:00Z",
+            },
+            CreatedAt: "2024-06-01T12:00:00Z",
+          }),
+          makeEvent({
+            ID: 11,
+            EventType: "issue_comment",
+            Author: "reviewer",
+            Body: "The wrapper should stay close to the call site",
+            ThreadID: "disc-positioned",
+            CreatedAt: "2024-06-01T12:01:00Z",
+          }),
+        ],
+        provider: "gitlab",
+        platformHost: "gitlab.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+      },
+      context: new Map([
+        [STORES_KEY, {
+          diff: makeDiffStore(),
+          diffReviewDraft: {
+            setRouteContext: vi.fn(),
+            isSubmitting: () => false,
+          },
+        }],
+      ]),
+    });
+
+    expect(screen.getByText("src/review.ts:11")).toBeTruthy();
+    expect(screen.getByText("client.publishThreads();")).toBeTruthy();
+    expect(container.querySelectorAll(".thread-reply")).toHaveLength(2);
+
+    const threadText = container.querySelector(".event-card")?.textContent ?? "";
+    expect(threadText.indexOf("This needs a named helper")).toBeLessThan(
+      threadText.indexOf("Pushed an update"),
+    );
+    expect(threadText.indexOf("Pushed an update")).toBeLessThan(
+      threadText.indexOf("The wrapper should stay close to the call site"),
     );
   });
 
@@ -522,5 +667,75 @@ describe("EventTimeline", () => {
     });
 
     expect(screen.queryByRole("button", { name: "Edit comment" })).toBeNull();
+  });
+
+  it("shows review thread diff context and exposes a jump action", async () => {
+    const jumpToReviewThread = vi.fn();
+    const diff = makeDiffStore();
+
+    render(EventTimeline, {
+      props: {
+        events: [makeReviewThreadEvent()],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+        jumpToReviewThread,
+      },
+      context: new Map([
+        [STORES_KEY, {
+          diff,
+          diffReviewDraft: {
+            setRouteContext: vi.fn(),
+            isSubmitting: () => false,
+          },
+        }],
+      ]),
+    });
+
+    expect(screen.getByText("src/review.ts:10-11")).toBeTruthy();
+    expect(screen.getByText("client.publishThreads();")).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Jump to diff" }));
+
+    expect(jumpToReviewThread).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "thread-1", path: "src/review.ts" }),
+    );
+  });
+
+  it("marks review thread context outdated when the line is absent from the loaded diff", () => {
+    const diff = makeDiffStore({
+      getDiff: () => ({
+        stale: false,
+        whitespace_only_count: 0,
+        files: [],
+      }),
+    });
+
+    render(EventTimeline, {
+      props: {
+        events: [makeReviewThreadEvent()],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+      },
+      context: new Map([
+        [STORES_KEY, {
+          diff,
+          diffReviewDraft: {
+            setRouteContext: vi.fn(),
+            isSubmitting: () => false,
+          },
+        }],
+      ]),
+    });
+
+    expect(screen.getByText("Outdated")).toBeTruthy();
+    expect(screen.getByText("Diff context is no longer present in the loaded diff.")).toBeTruthy();
   });
 });

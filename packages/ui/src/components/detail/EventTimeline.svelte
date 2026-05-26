@@ -8,7 +8,6 @@
   import { untrack } from "svelte";
   import { slide } from "svelte/transition";
   import type { IssueEvent, PREvent } from "../../api/types.js";
-  import type { components } from "../../api/generated/schema.js";
   import type { StoreInstances } from "../../types.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
@@ -20,6 +19,10 @@
   } from "../../utils/item-reference.js";
   import CommentEditor from "./CommentEditor.svelte";
   import DiffReviewThreadSnippet from "../diff/DiffReviewThreadSnippet.svelte";
+  import {
+    reviewThreadContext,
+    type ReviewThread,
+  } from "../diff/review-thread-context.js";
 
   interface Props {
     events: Array<PREvent | IssueEvent>;
@@ -33,6 +36,7 @@
     filtered?: boolean;
     showCommitDetails?: boolean;
     onEditComment?: ((event: PREvent | IssueEvent, body: string) => Promise<boolean>) | undefined;
+    jumpToReviewThread?: ((thread: ReviewThread) => void) | undefined;
   }
 
   const {
@@ -47,11 +51,13 @@
     filtered = false,
     showCommitDetails = true,
     onEditComment,
+    jumpToReviewThread,
   }: Props = $props();
   const stores = getStores() as StoreInstances | undefined;
   const detailStore = stores?.detail;
+  const diffStore = stores?.diff;
   const diffReviewDraft = stores?.diffReviewDraft;
-  type ReviewThread = components["schemas"]["DiffReviewThreadResponse"];
+  const diff = $derived(diffStore?.getDiff() ?? null);
 
   $effect(() => {
     if (!provider || !repoOwner || !repoName || !repoPath || number == null) return;
@@ -59,6 +65,33 @@
     const nextNumber = number;
     untrack(() => {
       diffReviewDraft?.setRouteContext(nextRef, nextNumber);
+    });
+  });
+
+  $effect(() => {
+    if (!diffStore || !provider || !repoOwner || !repoName || !repoPath || number == null) return;
+    if (!events.some((event) => reviewThreadFor(event) !== null)) return;
+    if (diffStore.isDiffLoading()) return;
+    const current = diffStore.getCurrentPR();
+    if (
+      diffStore.getDiff() !== null &&
+      current?.provider === provider &&
+      current.platformHost === platformHost &&
+      current?.owner === repoOwner &&
+      current.name === repoName &&
+      current.repoPath === repoPath &&
+      current.number === number
+    ) {
+      return;
+    }
+    untrack(() => {
+      void diffStore.loadDiff(repoOwner, repoName, number, {
+        provider,
+        platformHost,
+        owner: repoOwner,
+        name: repoName,
+        repoPath,
+      });
     });
   });
 
@@ -91,8 +124,13 @@
   type TimelineEntry = {
     key: string;
     event: PREvent | IssueEvent;
-    threadID?: string;
+    threadID?: string | undefined;
+    reviewThread?: TimelineReviewThread | undefined;
     replies: Array<PREvent | IssueEvent>;
+  };
+
+  type TimelineReviewThread = {
+    thread: ReviewThread;
   };
 
   function threadID(event: PREvent | IssueEvent): string | null {
@@ -101,8 +139,12 @@
       : null;
   }
 
+  function timelineThreadID(event: PREvent | IssueEvent): string | null {
+    return threadID(event) ?? reviewThreadFor(event)?.thread.id ?? null;
+  }
+
   function isThreadedComment(event: PREvent | IssueEvent): boolean {
-    return shouldRenderMarkdown(event.EventType) && threadID(event) !== null;
+    return shouldRenderMarkdown(event.EventType) && timelineThreadID(event) !== null;
   }
 
   function eventSortValue(event: PREvent | IssueEvent): number {
@@ -122,7 +164,7 @@
     const threads: Array<{ id: string; events: Array<PREvent | IssueEvent> }> = [];
 
     for (const event of sourceEvents) {
-      const id = threadID(event);
+      const id = timelineThreadID(event);
       if (!id || !isThreadedComment(event)) continue;
       const thread = threads.find((item) => item.id === id);
       if (thread) {
@@ -136,9 +178,14 @@
     const entries: TimelineEntry[] = [];
 
     for (const event of sourceEvents) {
-      const id = threadID(event);
+      const id = timelineThreadID(event);
       if (!id || !isThreadedComment(event)) {
-        entries.push({ key: `event-${event.ID}`, event, replies: [] });
+        entries.push({
+          key: `event-${event.ID}`,
+          event,
+          reviewThread: reviewThreadFor(event) ?? undefined,
+          replies: [],
+        });
         continue;
       }
 
@@ -146,16 +193,26 @@
       emittedThreads.push(id);
 
       const threadEvents = [...(threads.find((item) => item.id === id)?.events ?? [event])];
+      const sortedThreadEvents = threadEvents.sort(compareEventsAscending);
+      const reviewThread = sortedThreadEvents
+        .map((threadEvent) => reviewThreadFor(threadEvent))
+        .find((thread): thread is TimelineReviewThread => thread !== null);
       if (threadEvents.length === 1) {
-        entries.push({ key: `event-${event.ID}`, event, replies: [] });
+        entries.push({
+          key: `event-${event.ID}`,
+          event,
+          reviewThread,
+          replies: [],
+        });
         continue;
       }
 
-      const [root, ...replies] = threadEvents.sort(compareEventsAscending);
+      const [root, ...replies] = sortedThreadEvents;
       entries.push({
         key: `thread-${id}`,
         event: root ?? event,
         threadID: id,
+        reviewThread,
         replies: replies.sort(compareEventsDescending),
       });
     }
@@ -275,9 +332,14 @@
     return sourceUrl ? { href: sourceUrl, internal: false } : null;
   }
 
-  function reviewThreadFor(event: PREvent | IssueEvent): ReviewThread | null {
+  function eventDiffThread(event: PREvent | IssueEvent): ReviewThread | null {
     if (!("diff_thread" in event)) return null;
     return (event.diff_thread as ReviewThread | undefined) ?? null;
+  }
+
+  function reviewThreadFor(event: PREvent | IssueEvent): TimelineReviewThread | null {
+    const thread = eventDiffThread(event);
+    return thread ? { thread } : null;
   }
 
   async function refreshAfterThreadChange(): Promise<void> {
@@ -373,15 +435,22 @@
   }
 </script>
 
-{#snippet eventBody(event: PREvent | IssueEvent, nested = false)}
+{#snippet eventBody(
+  event: PREvent | IssueEvent,
+  nested = false,
+  reviewThread: TimelineReviewThread | undefined = undefined,
+)}
   {#if event.Body}
-    {@const reviewThread = reviewThreadFor(event)}
     <div class={nested ? "event-body-wrap event-body-wrap--nested" : "event-body-wrap"}>
       {#if !nested && reviewThread}
         <DiffReviewThreadSnippet
-          thread={reviewThread}
-          canResolve={reviewThread.can_resolve && canResolveReviewThreads && diffReviewDraft != null}
+          thread={reviewThread.thread}
+          context={diff ? reviewThreadContext(diff, reviewThread.thread) : null}
+          canResolve={reviewThread.thread.can_resolve && canResolveReviewThreads && diffReviewDraft != null}
           onchanged={refreshAfterThreadChange}
+          jumpToDiff={jumpToReviewThread
+            ? () => jumpToReviewThread(reviewThread.thread)
+            : undefined}
         />
       {/if}
       <div class="event-actions">
@@ -618,7 +687,7 @@
             {#if event.Summary && (event.EventType === "commit" || event.EventType === "force_push")}
               <p class="event-summary">{event.Summary}</p>
             {/if}
-            {@render eventBody(event)}
+            {@render eventBody(event, false, entry.reviewThread)}
             {#if entry.replies.length > 0}
               <div class="thread-controls">
                 <button

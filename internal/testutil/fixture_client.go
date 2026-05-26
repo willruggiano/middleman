@@ -691,7 +691,10 @@ func (c *FixtureClient) CreateReview(
 ) (*gh.PullRequestReview, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.createReviewLocked(owner, repo, number, event, body)
+}
 
+func (c *FixtureClient) createReviewLocked(owner, repo string, number int, event, body string) (*gh.PullRequestReview, error) {
 	if c.findPullRequest(owner, repo, number) == nil {
 		return nil, fmt.Errorf("%w: pull request %s/%s#%d", errFixtureNotFound, owner, repo, number)
 	}
@@ -719,6 +722,20 @@ func (c *FixtureClient) CreateReview(
 	key := issueKey(owner, repo, number)
 	c.Reviews[key] = append(c.Reviews[key], review)
 	return review, nil
+}
+
+func (c *FixtureClient) CreateReviewWithComments(
+	_ context.Context,
+	owner, repo string,
+	number int,
+	event string,
+	body string,
+	_ string,
+	_ []*gh.DraftReviewComment,
+) (*gh.PullRequestReview, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.createReviewLocked(owner, repo, number, event, body)
 }
 
 func (c *FixtureClient) MarkPullRequestReadyForReview(

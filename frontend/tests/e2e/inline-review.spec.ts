@@ -233,6 +233,44 @@ const multiHunkDiffResponse = {
   ],
 };
 
+const longLineDiffResponse = {
+  stale: false,
+  whitespace_only_count: 0,
+  files: [
+    {
+      path: "internal/github/client.go",
+      old_path: "internal/github/client.go",
+      status: "modified",
+      additions: 1,
+      deletions: 0,
+      is_binary: false,
+      hunks: [
+        {
+          old_start: 1140,
+          old_count: 1,
+          new_start: 1140,
+          new_count: 2,
+          section: "",
+          lines: [
+            {
+              type: "context",
+              old_num: 1140,
+              new_num: 1140,
+              content: "func (c *liveClient) CreateReviewWithComments(ctx context.Context, owner, repo string, number int, event string, body string) (*gh.PullRequestReview, error) {",
+            },
+            {
+              type: "add",
+              old_num: null,
+              new_num: 1141,
+              content: "\treturn c.CreateReviewWithComments(ctx, owner, repo, number, event, body, comments, pullRequestReviewOptions, requestOptions, validationOptions)",
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
 type MockInlineReviewOptions = {
   publishStatus?: "published" | "partially_published";
   remainingDraftComments?: Array<Record<string, unknown>>;
@@ -296,6 +334,9 @@ async function mockInlineReviewAPI(
       side: body.range.side,
       line: body.range.line,
       new_line: body.range.new_line,
+      old_line: body.range.old_line,
+      start_line: body.range.start_line,
+      start_side: body.range.start_side,
       line_type: body.range.line_type,
       diff_head_sha: body.range.diff_head_sha,
       created_at: "2026-03-30T14:01:00Z",
@@ -327,9 +368,74 @@ test("adds and publishes an inline draft review comment", async ({ page }) => {
   await page.getByRole("button", { name: "Add comment" }).click();
 
   await expect(page.getByText("1 draft comment")).toBeVisible();
-  await expect(page.getByText("Please cover this line.")).toBeVisible();
+  await expect(page.locator(".inline-draft-comment")).toContainText("Please cover this line.");
   await page.getByRole("button", { name: "Publish review" }).click();
   await expect(page.getByText("1 draft comment")).toBeHidden();
+});
+
+test("keeps inline composer inside the visible diff pane on long lines", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 720 });
+  await page.addInitScript(() => {
+    localStorage.setItem("diff-word-wrap", "true");
+  });
+  await mockInlineReviewAPI(
+    page,
+    baseCapabilities,
+    "github",
+    "github.com",
+    longLineDiffResponse,
+  );
+
+  await page.goto("/pulls/github/acme/widgets/42/files");
+  await page.getByRole("button", { name: "Comment on new line 1141" }).click();
+
+  const scrollPane = page.locator(".file-content").first();
+  const composer = page.locator(".inline-composer");
+  await expect(composer).toBeVisible();
+
+  const scrollBox = await scrollPane.boundingBox();
+  const composerBox = await composer.boundingBox();
+  expect(scrollBox).not.toBeNull();
+  expect(composerBox).not.toBeNull();
+  expect(composerBox!.x).toBeGreaterThanOrEqual(scrollBox!.x);
+  expect(composerBox!.x + composerBox!.width).toBeLessThanOrEqual(
+    scrollBox!.x + scrollBox!.width + 1,
+  );
+  expect(composerBox!.width).toBeGreaterThan(scrollBox!.width * 0.9);
+});
+
+test("shows saved draft comments inline and jumps from the tray", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("diff-word-wrap", "true");
+  });
+  await mockInlineReviewAPI(page);
+
+  await page.goto("/pulls/github/acme/widgets/42/files");
+  await page.getByRole("button", { name: "Comment on new line 1" }).click();
+  await page.getByRole("button", { name: "Comment on new line 2" }).click({
+    modifiers: ["Shift"],
+  });
+  await page.getByPlaceholder("Leave a comment").fill("Please cover both lines.");
+  await page.getByRole("button", { name: "Add comment" }).click();
+
+  const inlineDraft = page.locator(".inline-draft-comment");
+  const scrollPane = page.locator(".file-content").first();
+  await expect(inlineDraft).toBeVisible();
+  await expect(inlineDraft).toContainText("Please cover both lines.");
+  await expect(page.locator(".gutter-new.gutter--selected")).toHaveCount(2);
+
+  const scrollBox = await scrollPane.boundingBox();
+  const inlineBox = await inlineDraft.boundingBox();
+  expect(scrollBox).not.toBeNull();
+  expect(inlineBox).not.toBeNull();
+  expect(inlineBox!.x).toBeGreaterThanOrEqual(scrollBox!.x);
+  expect(inlineBox!.x + inlineBox!.width).toBeLessThanOrEqual(
+    scrollBox!.x + scrollBox!.width + 1,
+  );
+  expect(inlineBox!.width).toBeGreaterThan(scrollBox!.width * 0.9);
+
+  await page.getByRole("button", { name: "src/main.ts:1-2" }).click();
+  await expect(inlineDraft).toBeFocused();
 });
 
 test("keeps remaining GitLab draft state visible after a partial publish", async ({ page }) => {
@@ -369,7 +475,7 @@ test("keeps remaining GitLab draft state visible after a partial publish", async
   await expect(summary).toHaveValue("");
   await expect(page.locator(".review-warning")).toContainText("Review was partially published");
   await expect(page.getByText("1 draft comment")).toBeVisible();
-  await expect(page.getByText("Still needs follow-up.")).toBeVisible();
+  await expect(page.locator(".inline-draft-comment")).toContainText("Still needs follow-up.");
 });
 
 test("hides inline review controls when provider draft review is unsupported", async ({ page }) => {
@@ -388,9 +494,21 @@ test("resolves a published inline review thread from the timeline", async ({ pag
   await mockInlineReviewAPI(page);
 
   await page.goto("/pulls/github/acme/widgets/42");
-  await expect(page.getByText("Existing inline comment")).toBeVisible();
+  await expect(page.getByText("src/main.ts:2")).toBeVisible();
   await page.getByRole("button", { name: "Resolve" }).click();
   await expect(page.getByText("Resolved")).toBeVisible();
+});
+
+test("shows published inline review context in conversation and jumps to the diff line", async ({ page }) => {
+  await mockInlineReviewAPI(page);
+
+  await page.goto("/pulls/github/acme/widgets/42");
+
+  await expect(page.getByLabel("Commented diff context")).toContainText("const b = 2;");
+  await page.getByRole("button", { name: "Jump to diff" }).click();
+
+  await expect(page.getByRole("button", { name: /Files changed/ })).toHaveClass(/detail-tab--active/);
+  await expect(page.locator('[data-diff-path="src/main.ts"][data-diff-new-line="2"]')).toBeFocused();
 });
 
 test("enables inline review on public Forgejo and Gitea files routes", async ({ page }) => {
