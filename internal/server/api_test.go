@@ -19351,7 +19351,9 @@ func prepareIssueWorkspaceAssociationFixture(
 	t.Helper()
 	require := require.New(t)
 
-	fixture := setupWorkspaceServerFixture(t, nil)
+	fixture := setupWorkspaceServerFixtureWithOptions(t, nil, ServerOptions{
+		DisableWorkspaceBackgroundMonitors: true,
+	})
 	ctx := context.Background()
 
 	seedIssue(t, fixture.database, "acme", "widget", 7, "open")

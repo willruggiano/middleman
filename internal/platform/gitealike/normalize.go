@@ -1,6 +1,7 @@
 package gitealike
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -173,6 +174,38 @@ func NormalizeIssueComments(
 	return events
 }
 
+func NormalizeIssueTimelineEvents(
+	kind platform.Kind,
+	repo platform.RepoRef,
+	number int,
+	timeline []TimelineEventDTO,
+) []platform.IssueEvent {
+	events := make([]platform.IssueEvent, 0, len(timeline))
+	for _, item := range timeline {
+		eventType, summary, metadataJSON, ok := normalizeTimelineEvent(item)
+		if !ok {
+			continue
+		}
+		externalID := strconv.FormatInt(item.ID, 10)
+		events = append(events, platform.IssueEvent{
+			Repo:               repo,
+			PlatformID:         item.ID,
+			PlatformExternalID: externalID,
+			IssueNumber:        number,
+			EventType:          eventType,
+			Author:             item.User.UserName,
+			Summary:            summary,
+			MetadataJSON:       metadataJSON,
+			CreatedAt:          item.Created.UTC(),
+			DedupeKey: NoteDedupeKey(
+				kind, repo.Host, repo.RepoPath, "issue", number, eventType,
+				externalID,
+			),
+		})
+	}
+	return events
+}
+
 func NormalizeMergeRequestEvents(
 	kind platform.Kind,
 	repo platform.RepoRef,
@@ -224,6 +257,102 @@ func NormalizeMergeRequestEvents(
 		})
 	}
 	return events
+}
+
+func NormalizeMergeRequestTimelineEvents(
+	kind platform.Kind,
+	repo platform.RepoRef,
+	number int,
+	timeline []TimelineEventDTO,
+) []platform.MergeRequestEvent {
+	events := make([]platform.MergeRequestEvent, 0, len(timeline))
+	for _, item := range timeline {
+		eventType, summary, metadataJSON, ok := normalizeTimelineEvent(item)
+		if !ok {
+			continue
+		}
+		externalID := strconv.FormatInt(item.ID, 10)
+		events = append(events, platform.MergeRequestEvent{
+			Repo:               repo,
+			PlatformID:         item.ID,
+			PlatformExternalID: externalID,
+			MergeRequestNumber: number,
+			EventType:          eventType,
+			Author:             item.User.UserName,
+			Summary:            summary,
+			MetadataJSON:       metadataJSON,
+			CreatedAt:          item.Created.UTC(),
+			DedupeKey: NoteDedupeKey(
+				kind, repo.Host, repo.RepoPath, "mr", number, eventType,
+				externalID,
+			),
+		})
+	}
+	return events
+}
+
+type renamedTitleMetadata struct {
+	PreviousTitle string `json:"previous_title"`
+	CurrentTitle  string `json:"current_title"`
+}
+
+func normalizeTimelineEvent(item TimelineEventDTO) (eventType, summary, metadataJSON string, ok bool) {
+	eventType, ok = normalizeAssignmentEventType(item.Type)
+	if ok {
+		return eventType, assignmentSummary(eventType, item.User.UserName, item.Assignee.UserName), "", true
+	}
+
+	if !isTitleChangeEvent(item.Type) {
+		return "", "", "", false
+	}
+	metadata, _ := json.Marshal(renamedTitleMetadata{
+		PreviousTitle: item.PreviousTitle,
+		CurrentTitle:  item.CurrentTitle,
+	})
+	return "renamed_title", fmt.Sprintf("%q -> %q", item.PreviousTitle, item.CurrentTitle), string(metadata), true
+}
+
+func normalizeAssignmentEventType(value string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "assigned":
+		return "assigned", true
+	case "unassigned":
+		return "unassigned", true
+	default:
+		return "", false
+	}
+}
+
+func isTitleChangeEvent(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "change_title", "renamed_title":
+		return true
+	default:
+		return false
+	}
+}
+
+func assignmentSummary(eventType, actor, assignee string) string {
+	switch eventType {
+	case "assigned":
+		if actor != "" && actor == assignee {
+			return "self-assigned this"
+		}
+		if assignee != "" {
+			return "assigned " + assignee
+		}
+		return "assigned someone"
+	case "unassigned":
+		if actor != "" && actor == assignee {
+			return "unassigned themselves"
+		}
+		if assignee != "" {
+			return "unassigned " + assignee
+		}
+		return "removed an assignment"
+	default:
+		return ""
+	}
 }
 
 func NormalizeRelease(repo platform.RepoRef, release ReleaseDTO) platform.Release {
