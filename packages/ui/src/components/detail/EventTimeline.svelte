@@ -27,6 +27,7 @@
 
   interface Props {
     events: Array<PREvent | IssueEvent>;
+    orderingEvents?: Array<PREvent | IssueEvent> | undefined;
     provider?: string | undefined;
     platformHost?: string | undefined;
     repoOwner?: string;
@@ -43,6 +44,7 @@
 
   const {
     events,
+    orderingEvents = events,
     provider,
     platformHost,
     repoOwner,
@@ -163,10 +165,261 @@
     return eventSortValue(b) - eventSortValue(a) || b.ID - a.ID;
   }
 
-  function buildTimelineEntries(sourceEvents: Array<PREvent | IssueEvent>): TimelineEntry[] {
-    const threads: Array<{ id: string; events: Array<PREvent | IssueEvent> }> = [];
+  type ForcePushBoundary = {
+    eventID: number;
+    orderCommitID: number;
+    startAfterCommitID: number;
+    afterCommitID?: number | undefined;
+    endAtCommitID?: number | undefined;
+    pushedAt: number;
+    usesAfterAnchor: boolean;
+  };
+
+  type ForcePushGeneration = ForcePushBoundary & {
+    effectiveStartAfterCommitID: number;
+    effectiveEndAtCommitID: number;
+  };
+
+  type TimelineDisplaySortKey = {
+    time: number;
+    bucketID: number;
+    generationOrder: number;
+    id: number;
+  };
+
+  type CommitSHAIndex = {
+    exact: Map<string, PREvent | IssueEvent>;
+    prefixes: Map<string, PREvent | IssueEvent | null>;
+  };
+
+  const minSHAPrefixLength = 7;
+  const maxSHALength = 64;
+
+  function normalizeSHA(value: string): string | null {
+    const sha = value.trim().toLowerCase();
+    if (sha.length < minSHAPrefixLength || sha.length > maxSHALength) return null;
+    return /^[0-9a-f]+$/.test(sha) ? sha : null;
+  }
+
+  function commitSHA(event: PREvent | IssueEvent): string | null {
+    return event.EventType === "commit" ? normalizeSHA(event.Summary) : null;
+  }
+
+  function addUniquePrefix(
+    prefixes: CommitSHAIndex["prefixes"],
+    prefix: string,
+    event: PREvent | IssueEvent,
+  ): void {
+    const existing = prefixes.get(prefix);
+    if (existing === undefined) {
+      prefixes.set(prefix, event);
+      return;
+    }
+    if (existing?.ID !== event.ID) prefixes.set(prefix, null);
+  }
+
+  function buildCommitSHAIndex(sourceEvents: Array<PREvent | IssueEvent>): CommitSHAIndex {
+    const index: CommitSHAIndex = {
+      exact: new Map(),
+      prefixes: new Map(),
+    };
 
     for (const event of sourceEvents) {
+      const sha = commitSHA(event);
+      if (!sha) continue;
+      index.exact.set(sha, event);
+      for (
+        let length = minSHAPrefixLength;
+        length <= sha.length && length <= maxSHALength;
+        length += 1
+      ) {
+        addUniquePrefix(index.prefixes, sha.slice(0, length), event);
+      }
+    }
+
+    return index;
+  }
+
+  function lookupCommitBySHA(index: CommitSHAIndex, value: string): PREvent | IssueEvent | null {
+    const sha = normalizeSHA(value);
+    if (!sha) return null;
+    const exact = index.exact.get(sha);
+    if (exact) return exact;
+    for (let length = sha.length; length >= minSHAPrefixLength; length -= 1) {
+      const prefixMatch = index.prefixes.get(sha.slice(0, length));
+      if (prefixMatch !== undefined) return prefixMatch;
+    }
+    return null;
+  }
+
+  function forcePushBeforeSHA(event: PREvent | IssueEvent): string | null {
+    if (event.EventType !== "force_push") return null;
+    return metadataString(parseMetadata(event), "before_sha");
+  }
+
+  function forcePushAfterSHA(event: PREvent | IssueEvent): string | null {
+    if (event.EventType !== "force_push") return null;
+    return metadataString(parseMetadata(event), "after_sha");
+  }
+
+  function buildForcePushBoundaries(sourceEvents: Array<PREvent | IssueEvent>): ForcePushBoundary[] {
+    const commitIndex = buildCommitSHAIndex(sourceEvents);
+    const boundaries: ForcePushBoundary[] = [];
+
+    for (const event of sourceEvents) {
+      const beforeSHA = forcePushBeforeSHA(event);
+      const beforeCommit = beforeSHA ? lookupCommitBySHA(commitIndex, beforeSHA) : null;
+      if (beforeCommit) {
+        const afterSHA = forcePushAfterSHA(event);
+        const afterCommit = afterSHA ? lookupCommitBySHA(commitIndex, afterSHA) : null;
+        boundaries.push({
+          eventID: event.ID,
+          orderCommitID: beforeCommit.ID,
+          startAfterCommitID: beforeCommit.ID,
+          afterCommitID: afterCommit?.ID,
+          pushedAt: eventSortValue(event),
+          usesAfterAnchor: false,
+        });
+        continue;
+      }
+
+      const afterSHA = forcePushAfterSHA(event);
+      const afterCommit = afterSHA ? lookupCommitBySHA(commitIndex, afterSHA) : null;
+      if (!afterCommit) continue;
+      boundaries.push({
+        eventID: event.ID,
+        orderCommitID: afterCommit.ID,
+        startAfterCommitID: 0,
+        afterCommitID: afterCommit.ID,
+        endAtCommitID: afterCommit.ID,
+        pushedAt: eventSortValue(event),
+        usesAfterAnchor: true,
+      });
+    }
+
+    return boundaries.sort((a, b) =>
+      a.orderCommitID - b.orderCommitID || a.pushedAt - b.pushedAt,
+    );
+  }
+
+  function buildForcePushGenerations(boundaries: ForcePushBoundary[]): ForcePushGeneration[] {
+    const generations: Array<Omit<ForcePushGeneration, "effectiveEndAtCommitID">> = [];
+    for (const [index, boundary] of boundaries.entries()) {
+      const previous = boundaries[index - 1];
+      generations.push({
+        ...boundary,
+        effectiveStartAfterCommitID: boundary.usesAfterAnchor
+          ? previous?.afterCommitID ?? previous?.orderCommitID ?? 0
+          : boundary.startAfterCommitID,
+      });
+    }
+
+    return generations.map((generation, index) => {
+      const nextGeneration = generations[index + 1];
+      return {
+        ...generation,
+        effectiveEndAtCommitID: Math.min(
+          generation.endAtCommitID ?? Number.POSITIVE_INFINITY,
+          nextGeneration?.effectiveStartAfterCommitID ?? Number.POSITIVE_INFINITY,
+        ),
+      };
+    });
+  }
+
+  function buildForcePushDisplaySortKeys(
+    sourceEvents: Array<PREvent | IssueEvent>,
+    boundaries: ForcePushBoundary[],
+  ): Record<number, TimelineDisplaySortKey> {
+    const generations = buildForcePushGenerations(boundaries);
+    const displaySortKeys: Record<number, TimelineDisplaySortKey> = {};
+    for (const event of sourceEvents) {
+      displaySortKeys[event.ID] = {
+        time: eventSortValue(event),
+        bucketID: event.ID,
+        generationOrder: 0,
+        id: event.ID,
+      };
+    }
+
+    const commitEvents = sourceEvents
+      .filter((event) => event.EventType === "commit")
+      .sort((a, b) => a.ID - b.ID);
+    let commitIndex = 0;
+
+    for (const [index, generation] of generations.entries()) {
+      const nextGeneration = generations[index + 1];
+      displaySortKeys[generation.eventID] = {
+        time: generation.pushedAt,
+        bucketID: generation.eventID,
+        generationOrder: 1,
+        id: generation.eventID,
+      };
+      while (
+        commitIndex < commitEvents.length &&
+        (commitEvents[commitIndex]?.ID ?? 0) <= generation.effectiveStartAfterCommitID
+      ) {
+        commitIndex += 1;
+      }
+      while (
+        commitIndex < commitEvents.length &&
+        (commitEvents[commitIndex]?.ID ?? Number.POSITIVE_INFINITY) <= generation.effectiveEndAtCommitID
+      ) {
+        const event = commitEvents[commitIndex];
+        if (!event) break;
+        const lowerBounded = Math.max(eventSortValue(event), generation.pushedAt);
+        const nextPushedAt = nextGeneration?.pushedAt;
+        displaySortKeys[event.ID] = {
+          time: nextPushedAt !== undefined && nextPushedAt >= generation.pushedAt
+            ? Math.min(lowerBounded, nextPushedAt)
+            : lowerBounded,
+          bucketID: generation.eventID,
+          generationOrder: 2,
+          id: event.ID,
+        };
+        commitIndex += 1;
+      }
+    }
+
+    return displaySortKeys;
+  }
+
+  function orderEventsForForcePushBoundaries(
+    sourceEvents: Array<PREvent | IssueEvent>,
+    orderingSourceEvents: Array<PREvent | IssueEvent> = sourceEvents,
+  ): Array<PREvent | IssueEvent> {
+    const boundaries = buildForcePushBoundaries(orderingSourceEvents);
+    if (boundaries.length === 0) return sourceEvents;
+    const displaySortKeys = buildForcePushDisplaySortKeys(orderingSourceEvents, boundaries);
+    return [...sourceEvents].sort((a, b) => {
+      const aKey = displaySortKeys[a.ID] ?? {
+        time: eventSortValue(a),
+        bucketID: a.ID,
+        generationOrder: 0,
+        id: a.ID,
+      };
+      const bKey = displaySortKeys[b.ID] ?? {
+        time: eventSortValue(b),
+        bucketID: b.ID,
+        generationOrder: 0,
+        id: b.ID,
+      };
+      return (
+        bKey.time - aKey.time ||
+        bKey.bucketID - aKey.bucketID ||
+        bKey.generationOrder - aKey.generationOrder ||
+        bKey.id - aKey.id
+      );
+    });
+  }
+
+  function buildTimelineEntries(
+    sourceEvents: Array<PREvent | IssueEvent>,
+    orderingSourceEvents: Array<PREvent | IssueEvent>,
+  ): TimelineEntry[] {
+    const orderedEvents = orderEventsForForcePushBoundaries(sourceEvents, orderingSourceEvents);
+    const threads: Array<{ id: string; events: Array<PREvent | IssueEvent> }> = [];
+
+    for (const event of orderedEvents) {
       const id = timelineThreadID(event);
       if (!id || !isThreadedComment(event)) continue;
       const thread = threads.find((item) => item.id === id);
@@ -180,7 +433,7 @@
     const emittedThreads: string[] = [];
     const entries: TimelineEntry[] = [];
 
-    for (const event of sourceEvents) {
+    for (const event of orderedEvents) {
       const id = timelineThreadID(event);
       if (!id || !isThreadedComment(event)) {
         entries.push({
@@ -223,7 +476,7 @@
     return entries;
   }
 
-  const timelineEntries = $derived(buildTimelineEntries(events));
+  const timelineEntries = $derived(buildTimelineEntries(events, orderingEvents));
 
   function isCompactEvent(eventType: string): boolean {
     return (

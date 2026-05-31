@@ -30,6 +30,12 @@ async function openPRTimeline(page: Page): Promise<void> {
     .toBeVisible();
 }
 
+async function openPRTimelinePath(page: Page, path: string): Promise<void> {
+  await gotoWithWebKitRetry(page, path);
+  await page.locator(".pull-detail")
+    .waitFor({ state: "visible", timeout: 10_000 });
+}
+
 async function openTimelineFilters(page: Page): Promise<void> {
   await page.locator('button[title="Filter PR activity"]').click();
   await expect(page.locator(".filter-dropdown")).toBeVisible();
@@ -37,6 +43,22 @@ async function openTimelineFilters(page: Page): Promise<void> {
 
 function cacheCommitRow(page: Page) {
   return page.locator(".event--compact", { hasText: "abc1111" }).first();
+}
+
+async function expectTimelineTextOrder(page: Page, labels: string[]): Promise<void> {
+  const timeline = page.locator(".timeline");
+  await expect(timeline).toBeVisible();
+  for (const label of labels) {
+    await expect(timeline).toContainText(label);
+  }
+
+  const positions = await timeline.evaluate((element, expectedLabels) => {
+    const text = element.textContent ?? "";
+    return expectedLabels.map((label) => text.indexOf(label));
+  }, labels);
+
+  expect(positions.every((position) => position >= 0)).toBe(true);
+  expect(positions).toEqual([...positions].sort((a, b) => a - b));
 }
 
 test.describe("PR timeline filters", () => {
@@ -50,8 +72,10 @@ test.describe("PR timeline filters", () => {
   test("renders seeded commit and system timeline events", async ({ page }) => {
     await openPRTimeline(page);
 
-    await expect(page.getByText("Force-pushed")).toBeVisible();
+    await expect(page.locator(".event-type", { hasText: "Force-pushed" }))
+      .toHaveCount(2);
     await expect(page.getByText("abc4444 -> def5555")).toBeVisible();
+    await expect(page.getByText("abc9999 -> def7777")).toBeVisible();
     await expect(page.locator(".event-type", { hasText: "Referenced" }))
       .toHaveCount(3);
     await expect(page.getByText("Widget rendering broken on Safari"))
@@ -62,6 +86,32 @@ test.describe("PR timeline filters", () => {
     )).toBeVisible();
     await expect(page.getByText("Base changed")).toBeVisible();
     await expect(page.getByText("develop -> main")).toBeVisible();
+  });
+
+  test("orders force-push commit generations through the seeded timeline", async ({ page }) => {
+    await openPRTimeline(page);
+
+    await expectTimelineTextOrder(page, [
+      "Base changed",
+      "chore: tune cache eviction metrics",
+      "Title changed",
+      "fix: finish cache rebase after follow-up force push",
+      "abc9999 -> def7777",
+      "Same timestamp reviewer note between force-push IDs.",
+      "fix: guard nil cache after rebase",
+      "abc4444 -> def5555",
+      "fix: guard nil cache before rebase",
+    ]);
+  });
+
+  test("orders fresh-import force-push commits without the old anchor commit", async ({ page }) => {
+    await openPRTimelinePath(page, "/pulls/github/acme/widgets/2");
+
+    await expectTimelineTextOrder(page, [
+      "fix: guard widget race after import",
+      "test: reproduce widget race after import",
+      "2222aaa -> 2222ccc",
+    ]);
   });
 
   test("keeps commit rows while hiding and restoring system event buckets", async ({ page }) => {
@@ -90,6 +140,12 @@ test.describe("PR timeline filters", () => {
 
     await page.getByRole("button", { name: "Force pushes" }).click();
     await expect(page.getByText("abc4444 -> def5555")).not.toBeVisible();
+    await expect(page.getByText("abc9999 -> def7777")).not.toBeVisible();
+    await expectTimelineTextOrder(page, [
+      "fix: finish cache rebase after follow-up force push",
+      "fix: guard nil cache after rebase",
+      "fix: guard nil cache before rebase",
+    ]);
     await page.getByRole("button", { name: "Force pushes" }).click();
     await expect(page.getByText("abc4444 -> def5555")).toBeVisible();
   });

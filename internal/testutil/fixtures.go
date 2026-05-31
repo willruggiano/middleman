@@ -521,8 +521,17 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// --- PR Events ---
 
-	// widgets PR#1: 2 comments (bob, carol), 1 review (bob APPROVED), 4 commits (alice)
+	// widgets PR#1: 2 comments (bob, carol), 1 review (bob APPROVED), commits around a force-push
 	commitBase := now.Add(-9 * 24 * time.Hour)
+	w1Commit1 := "abc1111111111111111111111111111111111111"
+	w1Commit2 := "abc2222222222222222222222222222222222222"
+	w1Commit3 := "abc3333333333333333333333333333333333333"
+	w1OldHead := "abc4444444444444444444444444444444444444"
+	w1NewCommit := "def3333333333333333333333333333333333333"
+	w1NewHead := "def5555555555555555555555555555555555555"
+	w1SecondMissingBefore := "abc9999999999999999999999999999999999999"
+	w1SecondHead := "def7777777777777777777777777777777777777"
+	w1FollowUp := "def6666666666666666666666666666666666666"
 	w1BobCommentUTC := time.Date(now.Year(), now.Month(), now.Day(), 1, 30, 0, 0, time.UTC).Add(-8 * 24 * time.Hour)
 	w1BobComment, err := time.Parse(
 		time.RFC3339,
@@ -561,7 +570,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			MergeRequestID: w1ID,
 			EventType:      "commit",
 			Author:         "alice",
-			Summary:        "abc1111",
+			Summary:        w1Commit1,
 			Body:           "feat: add cache store\n\nCache entries now expire when pull request detail data is refreshed.",
 			CreatedAt:      commitBase,
 			DedupeKey:      "w1-commit-1",
@@ -570,7 +579,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			MergeRequestID: w1ID,
 			EventType:      "commit",
 			Author:         "alice",
-			Summary:        "abc2222",
+			Summary:        w1Commit2,
 			Body:           "feat: wire cache into handler",
 			CreatedAt:      commitBase.Add(2 * time.Hour),
 			DedupeKey:      "w1-commit-2",
@@ -579,7 +588,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			MergeRequestID: w1ID,
 			EventType:      "commit",
 			Author:         "alice",
-			Summary:        "abc3333",
+			Summary:        w1Commit3,
 			Body:           "test: add cache unit tests",
 			CreatedAt:      commitBase.Add(4 * time.Hour),
 			DedupeKey:      "w1-commit-3",
@@ -588,8 +597,8 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			MergeRequestID: w1ID,
 			EventType:      "commit",
 			Author:         "alice",
-			Summary:        "abc4444",
-			Body:           "fix: handle nil cache gracefully",
+			Summary:        w1OldHead,
+			Body:           "fix: guard nil cache before rebase",
 			CreatedAt:      commitBase.Add(6 * time.Hour),
 			DedupeKey:      "w1-commit-4",
 		},
@@ -598,9 +607,54 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			EventType:      "force_push",
 			Author:         "alice",
 			Summary:        "abc4444 -> def5555",
-			MetadataJSON:   `{"before_sha":"abc4444444444444444444444444444444444444","after_sha":"def5555555555555555555555555555555555555","ref":"feature/caching"}`,
+			MetadataJSON:   fmt.Sprintf(`{"before_sha":%q,"after_sha":%q,"ref":"feature/caching"}`, w1OldHead, w1NewHead),
 			CreatedAt:      commitBase.Add(8 * time.Hour),
 			DedupeKey:      "w1-force-push-1",
+		},
+		{
+			MergeRequestID: w1ID,
+			EventType:      "commit",
+			Author:         "alice",
+			Summary:        w1NewCommit,
+			Body:           "test: add cache unit tests after rebase",
+			CreatedAt:      commitBase.Add(4 * time.Hour),
+			DedupeKey:      "w1-commit-5",
+		},
+		{
+			MergeRequestID: w1ID,
+			EventType:      "commit",
+			Author:         "alice",
+			Summary:        w1NewHead,
+			Body:           "fix: guard nil cache after rebase",
+			CreatedAt:      commitBase.Add(6 * time.Hour),
+			DedupeKey:      "w1-commit-6",
+		},
+		{
+			MergeRequestID: w1ID,
+			EventType:      "commit",
+			Author:         "alice",
+			Summary:        w1SecondHead,
+			Body:           "fix: finish cache rebase after follow-up force push",
+			CreatedAt:      commitBase.Add(6 * time.Hour),
+			DedupeKey:      "w1-commit-8",
+		},
+		{
+			MergeRequestID: w1ID,
+			EventType:      "review",
+			Author:         "bob",
+			Summary:        "COMMENTED",
+			Body:           "Same timestamp reviewer note between force-push IDs.",
+			CreatedAt:      commitBase.Add(8 * time.Hour),
+			DedupeKey:      "w1-review-force-push-same-timestamp",
+		},
+		{
+			MergeRequestID: w1ID,
+			EventType:      "force_push",
+			Author:         "alice",
+			Summary:        "abc9999 -> def7777",
+			MetadataJSON:   fmt.Sprintf(`{"before_sha":%q,"after_sha":%q,"ref":"feature/caching"}`, w1SecondMissingBefore, w1SecondHead),
+			CreatedAt:      commitBase.Add(8 * time.Hour),
+			DedupeKey:      "w1-force-push-2",
 		},
 		{
 			MergeRequestID: w1ID,
@@ -640,6 +694,15 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		},
 		{
 			MergeRequestID: w1ID,
+			EventType:      "commit",
+			Author:         "alice",
+			Summary:        w1FollowUp,
+			Body:           "chore: tune cache eviction metrics",
+			CreatedAt:      commitBase.Add(10*time.Hour + 30*time.Minute),
+			DedupeKey:      "w1-commit-7",
+		},
+		{
+			MergeRequestID: w1ID,
 			EventType:      "base_ref_changed",
 			Author:         "alice",
 			Summary:        "develop -> main",
@@ -652,8 +715,39 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		return nil, fmt.Errorf("upsert widgets PR#1 events: %w", err)
 	}
 
-	// widgets PR#2: 1 comment (alice), 1 review (alice CHANGES_REQUESTED)
+	// widgets PR#2: imported after a force-push, so only the new commit generation is present
+	w2MissingOldHead := "2222aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	w2CurrentCommit := "2222bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	w2CurrentHead := "2222cccccccccccccccccccccccccccccccccccc"
+	w2CommitBase := now.Add(-6 * 24 * time.Hour)
 	err = d.UpsertMREvents(ctx, []db.MREvent{
+		{
+			MergeRequestID: w2ID,
+			EventType:      "commit",
+			Author:         "alice",
+			Summary:        w2CurrentCommit,
+			Body:           "test: reproduce widget race after import",
+			CreatedAt:      w2CommitBase,
+			DedupeKey:      "w2-commit-1",
+		},
+		{
+			MergeRequestID: w2ID,
+			EventType:      "commit",
+			Author:         "alice",
+			Summary:        w2CurrentHead,
+			Body:           "fix: guard widget race after import",
+			CreatedAt:      w2CommitBase.Add(1 * time.Hour),
+			DedupeKey:      "w2-commit-2",
+		},
+		{
+			MergeRequestID: w2ID,
+			EventType:      "force_push",
+			Author:         "alice",
+			Summary:        "2222aaa -> 2222ccc",
+			MetadataJSON:   fmt.Sprintf(`{"before_sha":%q,"after_sha":%q,"ref":"feature/race"}`, w2MissingOldHead, w2CurrentHead),
+			CreatedAt:      w2CommitBase.Add(2 * time.Hour),
+			DedupeKey:      "w2-force-push-1",
+		},
 		{
 			MergeRequestID: w2ID,
 			EventType:      "issue_comment",

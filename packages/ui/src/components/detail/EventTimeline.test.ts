@@ -489,6 +489,551 @@ describe("EventTimeline", () => {
     ).toBe(true);
   });
 
+  it("renders force pushes as boundaries between commit generations", () => {
+    const oldHead = "cccccccccccccccccccccccccccccccccccccccc";
+    const newHead = "ffffffffffffffffffffffffffffffffffffffff";
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 7,
+            EventType: "force_push",
+            Author: "alice",
+            Summary: "ccccccc -> fffffff",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: oldHead,
+              after_sha: newHead,
+            }),
+          }),
+          makeEvent({
+            ID: 6,
+            EventType: "commit",
+            Summary: newHead,
+            Body: "new C3 after rebase",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+          makeEvent({
+            ID: 3,
+            EventType: "commit",
+            Summary: oldHead,
+            Body: "old C3 before rebase",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+          makeEvent({
+            ID: 5,
+            EventType: "commit",
+            Summary: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            Body: "new C2 after rebase",
+            CreatedAt: "2024-06-01T10:02:00Z",
+          }),
+          makeEvent({
+            ID: 2,
+            EventType: "commit",
+            Summary: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            Body: "old C2 before rebase",
+            CreatedAt: "2024-06-01T10:02:00Z",
+          }),
+        ],
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text.indexOf("new C3 after rebase")).toBeLessThan(
+      text.indexOf("ccccccc -> fffffff"),
+    );
+    expect(text.indexOf("new C2 after rebase")).toBeLessThan(
+      text.indexOf("ccccccc -> fffffff"),
+    );
+    expect(text.indexOf("ccccccc -> fffffff")).toBeLessThan(
+      text.indexOf("old C3 before rebase"),
+    );
+    expect(text.indexOf("ccccccc -> fffffff")).toBeLessThan(
+      text.indexOf("old C2 before rebase"),
+    );
+  });
+
+  it("keeps later commits in chronological order after force-push generations", () => {
+    const oldHead = "cccccccccccccccccccccccccccccccccccccccc";
+    const newHead = "ffffffffffffffffffffffffffffffffffffffff";
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 9,
+            EventType: "commit",
+            Summary: "9999999999999999999999999999999999999999",
+            Body: "follow-up after force push",
+            CreatedAt: "2024-06-01T14:00:00Z",
+          }),
+          makeEvent({
+            ID: 8,
+            EventType: "issue_comment",
+            Summary: "",
+            Body: "comment after force push",
+            CreatedAt: "2024-06-01T13:00:00Z",
+          }),
+          makeEvent({
+            ID: 7,
+            EventType: "force_push",
+            Author: "alice",
+            Summary: "ccccccc -> fffffff",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: oldHead,
+              after_sha: newHead,
+            }),
+          }),
+          makeEvent({
+            ID: 6,
+            EventType: "commit",
+            Summary: newHead,
+            Body: "new head after rebase",
+            CreatedAt: "2024-06-01T10:00:00Z",
+          }),
+          makeEvent({
+            ID: 3,
+            EventType: "commit",
+            Summary: oldHead,
+            Body: "old head before rebase",
+            CreatedAt: "2024-06-01T10:00:00Z",
+          }),
+        ],
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text.indexOf("follow-up after force push")).toBeLessThan(
+      text.indexOf("comment after force push"),
+    );
+    expect(text.indexOf("comment after force push")).toBeLessThan(
+      text.indexOf("new head after rebase"),
+    );
+    expect(text.indexOf("new head after rebase")).toBeLessThan(
+      text.indexOf("ccccccc -> fffffff"),
+    );
+    expect(text.indexOf("ccccccc -> fffffff")).toBeLessThan(
+      text.indexOf("old head before rebase"),
+    );
+  });
+
+  it("keeps consecutive force pushes between their commit generations", () => {
+    const oldHead = "3333333333333333333333333333333333333333";
+    const firstHead = "6666666666666666666666666666666666666666";
+    const secondHead = "9999999999999999999999999999999999999999";
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 10,
+            EventType: "force_push",
+            Summary: "6666666 -> 9999999",
+            CreatedAt: "2024-06-01T13:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: firstHead,
+              after_sha: secondHead,
+            }),
+          }),
+          makeEvent({
+            ID: 9,
+            EventType: "commit",
+            Summary: secondHead,
+            Body: "second generation head",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+          makeEvent({
+            ID: 7,
+            EventType: "force_push",
+            Summary: "3333333 -> 6666666",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: oldHead,
+              after_sha: firstHead,
+            }),
+          }),
+          makeEvent({
+            ID: 6,
+            EventType: "commit",
+            Summary: firstHead,
+            Body: "first generation head",
+            CreatedAt: "2024-06-01T14:00:00Z",
+          }),
+          makeEvent({
+            ID: 3,
+            EventType: "commit",
+            Summary: oldHead,
+            Body: "original generation head",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+        ],
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text.indexOf("second generation head")).toBeLessThan(
+      text.indexOf("6666666 -> 9999999"),
+    );
+    expect(text.indexOf("6666666 -> 9999999")).toBeLessThan(
+      text.indexOf("first generation head"),
+    );
+    expect(text.indexOf("first generation head")).toBeLessThan(
+      text.indexOf("3333333 -> 6666666"),
+    );
+    expect(text.indexOf("3333333 -> 6666666")).toBeLessThan(
+      text.indexOf("original generation head"),
+    );
+  });
+
+  it("keeps consecutive same-timestamp force pushes between their commit generations", () => {
+    const oldHead = "3333333333333333333333333333333333333333";
+    const firstHead = "6666666666666666666666666666666666666666";
+    const secondHead = "9999999999999999999999999999999999999999";
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 10,
+            EventType: "force_push",
+            Summary: "6666666 -> 9999999",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: firstHead,
+              after_sha: secondHead,
+            }),
+          }),
+          makeEvent({
+            ID: 9,
+            EventType: "commit",
+            Summary: secondHead,
+            Body: "same timestamp second generation head",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+          makeEvent({
+            ID: 7,
+            EventType: "force_push",
+            Summary: "3333333 -> 6666666",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: oldHead,
+              after_sha: firstHead,
+            }),
+          }),
+          makeEvent({
+            ID: 6,
+            EventType: "commit",
+            Summary: firstHead,
+            Body: "same timestamp first generation head",
+            CreatedAt: "2024-06-01T14:00:00Z",
+          }),
+          makeEvent({
+            ID: 3,
+            EventType: "commit",
+            Summary: oldHead,
+            Body: "same timestamp original generation head",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+        ],
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text.indexOf("same timestamp second generation head")).toBeLessThan(
+      text.indexOf("6666666 -> 9999999"),
+    );
+    expect(text.indexOf("6666666 -> 9999999")).toBeLessThan(
+      text.indexOf("same timestamp first generation head"),
+    );
+    expect(text.indexOf("same timestamp first generation head")).toBeLessThan(
+      text.indexOf("3333333 -> 6666666"),
+    );
+    expect(text.indexOf("3333333 -> 6666666")).toBeLessThan(
+      text.indexOf("same timestamp original generation head"),
+    );
+  });
+
+  it("preserves natural same-timestamp ordering for unrelated timeline events", () => {
+    const oldHead = "3333333333333333333333333333333333333333";
+    const firstHead = "6666666666666666666666666666666666666666";
+    const secondHead = "9999999999999999999999999999999999999999";
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 10,
+            EventType: "force_push",
+            Summary: "6666666 -> 9999999",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: firstHead,
+              after_sha: secondHead,
+            }),
+          }),
+          makeEvent({
+            ID: 9,
+            EventType: "commit",
+            Summary: secondHead,
+            Body: "same timestamp natural second generation",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+          makeEvent({
+            ID: 8,
+            EventType: "issue_comment",
+            Summary: "",
+            Body: "same timestamp reviewer note",
+            CreatedAt: "2024-06-01T12:00:00Z",
+          }),
+          makeEvent({
+            ID: 7,
+            EventType: "force_push",
+            Summary: "3333333 -> 6666666",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: oldHead,
+              after_sha: firstHead,
+            }),
+          }),
+          makeEvent({
+            ID: 6,
+            EventType: "commit",
+            Summary: firstHead,
+            Body: "same timestamp natural first generation",
+            CreatedAt: "2024-06-01T14:00:00Z",
+          }),
+          makeEvent({
+            ID: 3,
+            EventType: "commit",
+            Summary: oldHead,
+            Body: "same timestamp natural original generation",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+        ],
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text.indexOf("same timestamp natural second generation")).toBeLessThan(
+      text.indexOf("6666666 -> 9999999"),
+    );
+    expect(text.indexOf("6666666 -> 9999999")).toBeLessThan(
+      text.indexOf("same timestamp reviewer note"),
+    );
+    expect(text.indexOf("same timestamp reviewer note")).toBeLessThan(
+      text.indexOf("same timestamp natural first generation"),
+    );
+    expect(text.indexOf("same timestamp natural first generation")).toBeLessThan(
+      text.indexOf("3333333 -> 6666666"),
+    );
+  });
+
+  it("keeps same-timestamp unrelated events outside force-push boundary buckets", () => {
+    const oldHead = "3333333333333333333333333333333333333333";
+    const newHead = "6666666666666666666666666666666666666666";
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 15,
+            EventType: "issue_comment",
+            Summary: "",
+            Body: "same timestamp reviewer note between IDs",
+            CreatedAt: "2024-06-01T12:00:00Z",
+          }),
+          makeEvent({
+            ID: 10,
+            EventType: "commit",
+            Summary: newHead,
+            Body: "same timestamp generated commit below comment ID",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+          makeEvent({
+            ID: 20,
+            EventType: "force_push",
+            Summary: "3333333 -> 6666666",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: oldHead,
+              after_sha: newHead,
+            }),
+          }),
+          makeEvent({
+            ID: 5,
+            EventType: "commit",
+            Summary: oldHead,
+            Body: "same timestamp original generation",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+        ],
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text.indexOf("same timestamp generated commit below comment ID")).toBeLessThan(
+      text.indexOf("3333333 -> 6666666"),
+    );
+    expect(text.indexOf("3333333 -> 6666666")).toBeLessThan(
+      text.indexOf("same timestamp reviewer note between IDs"),
+    );
+    expect(text.indexOf("same timestamp reviewer note between IDs")).toBeLessThan(
+      text.indexOf("same timestamp original generation"),
+    );
+  });
+
+  it("uses hidden force-push events to order visible commit generations", () => {
+    const oldHead = "3333333333333333333333333333333333333333";
+    const newHead = "6666666666666666666666666666666666666666";
+    const visibleEvents = [
+      makeEvent({
+        ID: 3,
+        EventType: "commit",
+        Summary: oldHead,
+        Body: "visible old generation head",
+        CreatedAt: "2024-06-01T11:00:00Z",
+      }),
+      makeEvent({
+        ID: 6,
+        EventType: "commit",
+        Summary: newHead,
+        Body: "visible new generation head",
+        CreatedAt: "2024-06-01T10:00:00Z",
+      }),
+    ];
+    const { container } = render(EventTimeline, {
+      props: {
+        events: visibleEvents,
+        orderingEvents: [
+          ...visibleEvents,
+          makeEvent({
+            ID: 7,
+            EventType: "force_push",
+            Summary: "3333333 -> 6666666",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: oldHead,
+              after_sha: newHead,
+            }),
+          }),
+        ],
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text.indexOf("visible new generation head")).toBeLessThan(
+      text.indexOf("visible old generation head"),
+    );
+    expect(screen.queryByText("3333333 -> 6666666")).toBeNull();
+  });
+
+  it("falls back to after-sha when the old force-push anchor was never imported", () => {
+    const missingOldHead = "3333333333333333333333333333333333333333";
+    const newHead = "6666666666666666666666666666666666666666";
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 7,
+            EventType: "force_push",
+            Summary: "3333333 -> 6666666",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: missingOldHead,
+              after_sha: newHead,
+            }),
+          }),
+          makeEvent({
+            ID: 6,
+            EventType: "commit",
+            Summary: newHead,
+            Body: "fresh import new head",
+            CreatedAt: "2024-06-01T10:02:00Z",
+          }),
+          makeEvent({
+            ID: 5,
+            EventType: "commit",
+            Summary: "5555555555555555555555555555555555555555",
+            Body: "fresh import earlier current commit",
+            CreatedAt: "2024-06-01T10:01:00Z",
+          }),
+        ],
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text.indexOf("fresh import new head")).toBeLessThan(
+      text.indexOf("3333333 -> 6666666"),
+    );
+    expect(text.indexOf("fresh import earlier current commit")).toBeLessThan(
+      text.indexOf("3333333 -> 6666666"),
+    );
+  });
+
+  it("orders fallback force-push boundaries after earlier anchored boundaries", () => {
+    const originalHead = "3333333333333333333333333333333333333333";
+    const firstHead = "6666666666666666666666666666666666666666";
+    const missingSecondBefore = "8888888888888888888888888888888888888888";
+    const secondHead = "9999999999999999999999999999999999999999";
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 10,
+            EventType: "force_push",
+            Summary: "8888888 -> 9999999",
+            CreatedAt: "2024-06-01T13:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: missingSecondBefore,
+              after_sha: secondHead,
+            }),
+          }),
+          makeEvent({
+            ID: 9,
+            EventType: "commit",
+            Summary: secondHead,
+            Body: "fallback second generation head",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+          makeEvent({
+            ID: 7,
+            EventType: "force_push",
+            Summary: "3333333 -> 6666666",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: originalHead,
+              after_sha: firstHead,
+            }),
+          }),
+          makeEvent({
+            ID: 6,
+            EventType: "commit",
+            Summary: firstHead,
+            Body: "anchored first generation head",
+            CreatedAt: "2024-06-01T14:00:00Z",
+          }),
+          makeEvent({
+            ID: 3,
+            EventType: "commit",
+            Summary: originalHead,
+            Body: "anchored original generation head",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+        ],
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text.indexOf("fallback second generation head")).toBeLessThan(
+      text.indexOf("8888888 -> 9999999"),
+    );
+    expect(text.indexOf("8888888 -> 9999999")).toBeLessThan(
+      text.indexOf("anchored first generation head"),
+    );
+    expect(text.indexOf("anchored first generation head")).toBeLessThan(
+      text.indexOf("3333333 -> 6666666"),
+    );
+    expect(text.indexOf("3333333 -> 6666666")).toBeLessThan(
+      text.indexOf("anchored original generation head"),
+    );
+  });
+
   it("renders system events as compact rows", () => {
     render(EventTimeline, {
       props: {
