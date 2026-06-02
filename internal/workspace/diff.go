@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.kenn.io/kit/git/env"
+	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/gitclone"
 	"go.kenn.io/middleman/internal/procutil"
 )
@@ -819,15 +819,15 @@ func worktreeGitOutputWithInput(
 	if dir == "" {
 		return nil, errors.New("empty worktree dir")
 	}
-	cmd := procutil.CommandContext(ctx, "git", args...)
-	cmd.Dir = dir
+	// gitcmd.New provides middleman's required git hygiene for workspace
+	// reads: strip inherited GIT_* hook state, ignore user/system config,
+	// and disable interactive prompts. The procutil wrapper below preserves
+	// the app-wide git subprocess capacity guard for potentially expensive
+	// diff commands.
+	cmd := gitcmd.New().Command(ctx, dir, args...)
 	if input != nil {
 		cmd.Stdin = bytes.NewReader(input)
 	}
-	cmd.Env = append(gitenv.StripAll(os.Environ()),
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_CONFIG_NOSYSTEM=1",
-	)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := procutil.Output(ctx, cmd, "git workspace diff subprocess capacity")
