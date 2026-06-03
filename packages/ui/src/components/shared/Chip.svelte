@@ -159,6 +159,8 @@
 
   .chip__label {
     min-width: 0;
+    padding-block: 0.1em;
+    margin-block: -0.1em;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
