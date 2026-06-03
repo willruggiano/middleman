@@ -1,0 +1,41 @@
+{
+  perSystem = {
+    config,
+    inputs',
+    pkgs,
+    ...
+  }: {
+    devshells.default.packages = [
+      config.packages.claude-code
+    ];
+
+    jail = {
+      programs.claude = {
+        additionalCombinators = cs:
+          with cs; [
+            (add-pkg-deps [pkgs.sox])
+            (readwrite (noescape "~/.claude"))
+            (readwrite (noescape "~/.claude.json"))
+          ];
+        git = {
+          user.email = "noreply@anthropic.com";
+          user.name = config.packages.claude-code-unwrapped.name;
+        };
+        package = config.packages.claude-code-unwrapped;
+      };
+    };
+
+    packages = {
+      claude-code = let
+        drv = config.jail.programs.claude.build.wrapped;
+      in
+        drv
+        // {
+          name = "${config.packages.claude-code-unwrapped.name}-jailed";
+          unjailed = config.packages.claude-code-unwrapped;
+        };
+
+      claude-code-unwrapped = inputs'.agents.packages.claude-code;
+    };
+  };
+}

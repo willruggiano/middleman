@@ -1,0 +1,8 @@
+# Automatically reload when Nix files changes
+watch_dir nix
+
+# Load `nix develop`
+use flake
+
+# Extend the environment with per-user overrides
+source_env_if_exists .envrc.local
