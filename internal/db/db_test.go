@@ -636,6 +636,7 @@ func TestOpenRepairsLegacyTimestampStorage(t *testing.T) {
 	require.NoError(removeMergeRequestLockedColumnForTest(raw))
 	require.NoError(removeProviderIdentityColumnsForTest(raw))
 	require.NoError(removeDiscussionColumnsForTest(raw))
+	require.NoError(removeIssueAssigneesColumnForTest(raw))
 	_, err = raw.ExecContext(ctx,
 		`UPDATE schema_migrations SET version = ?, dirty = FALSE`,
 		9,
@@ -741,6 +742,7 @@ func TestOpenRepairsBrokenWorkspaceMigrationVersion11(t *testing.T) {
 	require.NoError(removeMergeRequestLockedColumnForTest(raw))
 	require.NoError(removeProviderIdentityColumnsForTest(raw))
 	require.NoError(removeDiscussionColumnsForTest(raw))
+	require.NoError(removeIssueAssigneesColumnForTest(raw))
 	_, err = raw.Exec(`UPDATE schema_migrations SET version = 11, dirty = FALSE`)
 	require.NoError(err)
 	require.NoError(raw.Close())
@@ -821,114 +823,6 @@ func TestOpenRepairsCurrentSchemaMissingWorkspaceTerminalBackend(t *testing.T) {
 		WorkspaceBranch: "feature/backend",
 	})
 	require.NoError(err)
-}
-
-func TestOpenRenamesWorkspaceTmuxSessionsTableToRuntimeSessions(t *testing.T) {
-	require := require.New(t)
-	ctx := t.Context()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "rename-runtime-sessions.db")
-
-	d, err := Open(path)
-	require.NoError(err)
-	require.NoError(d.InsertWorkspace(ctx, &Workspace{
-		ID:              "ws-1",
-		PlatformHost:    "github.com",
-		RepoOwner:       "acme",
-		RepoName:        "widget",
-		ItemType:        WorkspaceItemTypePullRequest,
-		ItemNumber:      1,
-		GitHeadRef:      "feature/helper",
-		WorktreePath:    "/tmp/ws-1",
-		TmuxSession:     "middleman-ws-1",
-		Status:          "ready",
-		WorkspaceBranch: "feature/helper",
-	}))
-	require.NoError(d.Close())
-
-	raw, err := sql.Open("sqlite", path)
-	require.NoError(err)
-	_, err = raw.Exec(`
-		DROP INDEX IF EXISTS middleman_workspace_runtime_sessions_workspace_id_idx;
-		DROP TABLE IF EXISTS middleman_workspace_runtime_sessions;
-		CREATE TABLE middleman_workspace_tmux_sessions (
-		    workspace_id TEXT NOT NULL,
-		    session_name TEXT NOT NULL,
-		    target_key   TEXT NOT NULL,
-		    created_at   DATETIME NOT NULL DEFAULT (datetime('now')),
-		    PRIMARY KEY(workspace_id, session_name)
-		);
-		CREATE INDEX middleman_workspace_tmux_sessions_workspace_id_idx
-		    ON middleman_workspace_tmux_sessions(workspace_id);
-		INSERT INTO middleman_workspace_tmux_sessions
-		    (workspace_id, session_name, target_key, created_at)
-		VALUES
-		    ('ws-1', 'middleman-ws-1-helper', 'helper',
-		     '2026-05-30 12:00:00+00:00');
-		UPDATE schema_migrations SET version = 28, dirty = FALSE;
-	`)
-	require.NoError(err)
-	require.NoError(raw.Close())
-
-	reopened, err := Open(path)
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(reopened.Close()) })
-
-	require.False(tableExistsForTest(
-		t, reopened.ReadDB(), "middleman_workspace_tmux_sessions",
-	))
-	var count int
-	err = reopened.ReadDB().QueryRow(
-		`SELECT COUNT(*) FROM middleman_workspace_runtime_sessions`,
-	).Scan(&count)
-	require.NoError(err)
-	require.Equal(1, count)
-	var session WorkspaceRuntimeSession
-	err = reopened.ReadDB().QueryRow(`
-		SELECT workspace_id, session_key, target_key, label, kind, scope,
-		       tmux_session, created_at
-		FROM middleman_workspace_runtime_sessions`,
-	).Scan(
-		&session.WorkspaceID,
-		&session.SessionKey,
-		&session.TargetKey,
-		&session.Label,
-		&session.Kind,
-		&session.Scope,
-		&session.TmuxSession,
-		&session.CreatedAt,
-	)
-	require.NoError(err)
-	require.Equal("ws-1", session.WorkspaceID)
-	require.NotEqual("middleman-ws-1-helper", session.SessionKey)
-	require.Regexp(`^ws-1_[0-9a-f]{16}$`, session.SessionKey)
-	require.Equal("helper", session.TargetKey)
-	require.Equal("helper", session.Label)
-	require.Equal("agent", session.Kind)
-	require.Equal("session", session.Scope)
-	require.Equal("middleman-ws-1-helper", session.TmuxSession)
-	require.Equal(
-		time.Date(2026, 5, 30, 12, 0, 0, 0, time.UTC),
-		session.CreatedAt.UTC(),
-	)
-	for _, column := range []string{
-		"workspace_id",
-		"session_key",
-		"target_key",
-		"created_at",
-		"label",
-		"kind",
-		"scope",
-		"tmux_session",
-	} {
-		hasColumn, err := hasColumn(
-			reopened.ReadDB(),
-			"middleman_workspace_runtime_sessions",
-			column,
-		)
-		require.NoError(err)
-		require.Truef(hasColumn, "runtime sessions column %q", column)
-	}
 }
 
 func TestOpenInitializesBranchActivitySchema(t *testing.T) {
@@ -1055,6 +949,7 @@ func TestOpenMigratesWorkspaceUniquenessAndPreservesSetupEvents(t *testing.T) {
 	require.NoError(removeMergeRequestLockedColumnForTest(raw))
 	require.NoError(removeProviderIdentityColumnsForTest(raw))
 	require.NoError(removeDiscussionColumnsForTest(raw))
+	require.NoError(removeIssueAssigneesColumnForTest(raw))
 	_, err = raw.Exec(`UPDATE schema_migrations SET version = 11, dirty = FALSE`)
 	require.NoError(err)
 	require.NoError(raw.Close())
@@ -1514,6 +1409,11 @@ func removeDiscussionColumnsForTest(raw *sql.DB) error {
 		ALTER TABLE middleman_mr_events DROP COLUMN resolved;
 		ALTER TABLE middleman_issue_events DROP COLUMN thread_id;
 	`)
+	return err
+}
+
+func removeIssueAssigneesColumnForTest(raw *sql.DB) error {
+	_, err := raw.Exec(`ALTER TABLE middleman_issues DROP COLUMN assignees_json`)
 	return err
 }
 

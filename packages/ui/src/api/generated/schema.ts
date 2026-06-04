@@ -2510,6 +2510,7 @@ export interface components {
             URL: string;
             /** Format: date-time */
             UpdatedAt: string;
+            assignees?: string[] | null;
             labels?: components["schemas"]["Label"][] | null;
         };
         IssueDetailResponse: {
@@ -2585,6 +2586,7 @@ export interface components {
             URL: string;
             /** Format: date-time */
             UpdatedAt: string;
+            assignees?: string[] | null;
             detail_fetched_at?: string;
             detail_loaded: boolean;
             labels?: components["schemas"]["Label"][] | null;
@@ -5420,6 +5422,7 @@ export interface operations {
                 state?: string;
                 starred?: boolean;
                 q?: string;
+                assignee?: string;
                 limit?: number;
                 offset?: number;
             };

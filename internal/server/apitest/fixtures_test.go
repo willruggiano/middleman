@@ -16,6 +16,7 @@ import (
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/server"
+	"go.kenn.io/middleman/internal/testutil"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
@@ -39,6 +40,29 @@ func setupTestServer(t *testing.T) (*server.Server, *db.DB) {
 	})
 
 	return srv, database
+}
+
+func setupTestServerWithFixtureClient(
+	t *testing.T,
+) (*server.Server, *db.DB, *testutil.FixtureClient, *ghclient.Syncer) {
+	t.Helper()
+
+	database := dbtest.Open(t)
+	client := testutil.NewFixtureClient().(*testutil.FixtureClient)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": client},
+		database, nil, defaultTestRepos, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		require.NoError(t, srv.Shutdown(ctx))
+	})
+
+	return srv, database, client, syncer
 }
 
 func setupTestClient(t *testing.T, srv *server.Server) *apiclient.Client {
@@ -212,5 +236,27 @@ func seedIssueWithLabels(t *testing.T, database *db.DB, owner, name string, numb
 	repo, err := database.GetRepoByOwnerName(ctx, owner, name)
 	require.NoError(t, err)
 	require.NoError(t, database.ReplaceIssueLabels(ctx, repo.ID, issueID, labels))
+	return issueID
+}
+
+func seedIssueWithAssignees(t *testing.T, database *db.DB, owner, name string, number int, state string, assigneesJSON string) int64 {
+	t.Helper()
+	ctx := t.Context()
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", owner, name))
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	issue := &db.Issue{
+		RepoID: repoID, PlatformID: int64(number) * 1000, Number: number,
+		URL:   "https://github.com/" + owner + "/" + name + "/issues/" + strconv.Itoa(number),
+		Title: "Test Issue", Author: "testuser", State: state,
+		AssigneesJSON: assigneesJSON,
+		CreatedAt:     now, UpdatedAt: now, LastActivityAt: now,
+	}
+	if state == "closed" {
+		issue.ClosedAt = &now
+	}
+	issueID, err := database.UpsertIssue(ctx, issue)
+	require.NoError(t, err)
 	return issueID
 }

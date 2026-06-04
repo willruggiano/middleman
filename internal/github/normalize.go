@@ -293,6 +293,7 @@ func NormalizeIssue(repoID int64, ghIssue *gh.Issue) (*db.Issue, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	issue := &db.Issue{
 		RepoID:             repoID,
 		PlatformID:         platformIssue.PlatformID,
@@ -308,6 +309,8 @@ func NormalizeIssue(repoID int64, ghIssue *gh.Issue) (*db.Issue, error) {
 		UpdatedAt:          platformIssue.UpdatedAt,
 		LastActivityAt:     platformIssue.LastActivityAt,
 		ClosedAt:           platformIssue.ClosedAt,
+		AssigneesJSON:      platform.MarshalAssigneesJSON(platformIssue.Assignees),
+		Assignees:          platformIssue.Assignees,
 	}
 	issue.Labels = dbLabels(platformIssue.Labels, itemLabelUpdatedAt(issue.UpdatedAt, issue.CreatedAt))
 	return issue, nil
